@@ -1,5 +1,5 @@
+// src/app/page.tsx
 "use client";
-
 import { createPkcePair } from "@/lib/auth/pkce";
 import { COGNITO_CLIENT_ID, COGNITO_DOMAIN, OAUTH_SCOPES, REDIRECT_URI } from "@/lib/auth/config";
 
@@ -11,8 +11,10 @@ export default function Home() {
     }
 
     const { challenge } = await createPkcePair();
-    console.log("[login] session pkce:", sessionStorage.getItem("pkce_verifier"));
-    console.log("[login] local pkce:", localStorage.getItem("pkce_verifier"));
+
+    // 👇 read ?return_to=... from current URL (set by middleware), default to /residents
+    const params = new URLSearchParams(window.location.search);
+    const returnTo = params.get("return_to") ?? "/residents";
 
     const domain = COGNITO_DOMAIN.replace(/\/$/, "");
     const url = new URL(`${domain}/oauth2/authorize`);
@@ -22,9 +24,9 @@ export default function Home() {
     url.searchParams.set("scope", OAUTH_SCOPES);
     url.searchParams.set("code_challenge", challenge);
     url.searchParams.set("code_challenge_method", "S256");
+    // 👇 carry return path through OAuth
+    url.searchParams.set("state", encodeURIComponent(returnTo));
 
-    console.log("[login] redirecting to:", url.toString());
-    await new Promise((r) => setTimeout(r, 500));
     window.location.href = url.toString();
   };
 
