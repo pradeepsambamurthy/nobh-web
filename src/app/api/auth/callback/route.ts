@@ -1,3 +1,6 @@
+// src/app/api/auth/callback/route.ts
+export const runtime = 'nodejs'; // <— ensure Node runtime
+
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
@@ -8,8 +11,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "missing_fields" }, { status: 400 });
     }
 
-    const tokenUrl = `${cognito_domain}/oauth2/token`;
-    const body = new URLSearchParams({
+    const tokenUrl = `${cognito_domain.replace(/\/$/, "")}/oauth2/token`;
+    const form = new URLSearchParams({
       grant_type: "authorization_code",
       client_id,
       code,
@@ -20,30 +23,43 @@ export async function POST(req: Request) {
     const tokenResp = await fetch(tokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
+      body: form,
     });
 
-    const json = await tokenResp.json();
+    const json = await tokenResp.json().catch(() => ({}));
     if (!tokenResp.ok) {
-      return NextResponse.json({ error: "token_exchange_failed", details: json }, { status: 500 });
+      console.error("[callback] token exchange failed", tokenResp.status, json);
+      return NextResponse.json(
+        { error: "token_exchange_failed", status: tokenResp.status, details: json },
+        { status: 500 }
+      );
     }
 
     const { id_token, access_token, refresh_token, expires_in } = json;
 
+    // Build response and set cookies explicitly
     const res = NextResponse.json({ ok: true });
 
-    const secure = process.env.VERCEL === "1"; // on Vercel use Secure cookies
-    const cookieOpts = {
+    // Cross-site redirect from Cognito -> your domain => must be SameSite=None; Secure
+    // In local dev (http://localhost) Secure cookies are ignored by the browser,
+    // but setting it won’t hurt.
+    const baseCookie = {
       httpOnly: true as const,
-      sameSite: "lax" as const,
-      secure,
+      sameSite: "none" as const,   // IMPORTANT for cross-site
+      secure: true,                // IMPORTANT for cross-site
       path: "/",
       maxAge: Math.max(60, Number(expires_in ?? 3600)),
     };
 
-    if (id_token)     res.cookies.set("id_token", id_token, cookieOpts);
-    if (access_token) res.cookies.set("access_token", access_token, cookieOpts);
-    if (refresh_token)res.cookies.set("refresh_token", refresh_token, { ...cookieOpts, maxAge: 60 * 60 * 24 * 7 });
+    if (id_token)      res.cookies.set("id_token", id_token, baseCookie);
+    if (access_token)  res.cookies.set("access_token", access_token, baseCookie);
+    if (refresh_token) res.cookies.set("refresh_token", refresh_token, { ...baseCookie, maxAge: 60 * 60 * 24 * 7 });
+
+    // Also clear the PKCE verifier cookie now that we're done
+    res.headers.append(
+      "Set-Cookie",
+      "pkce_v=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None"
+    );
 
     return res;
   } catch (e) {
