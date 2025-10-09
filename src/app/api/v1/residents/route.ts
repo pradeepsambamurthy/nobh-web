@@ -18,7 +18,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    // 🔗 Try calling your backend only if API_BASE_URL exists
     const upstream = await fetch(`${process.env.API_BASE_URL}/residents`, {
       headers: { Authorization: `Bearer ${accessToken}` },
       cache: "no-store",
@@ -32,11 +31,13 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const data = await upstream.json();
+    const data: unknown = await upstream.json();
     return NextResponse.json({ data });
-  } catch (e: any) {
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown server error";
     return NextResponse.json(
-      { error: "internal_error", message: e.message || String(e) },
+      { error: "internal_error", message },
       { status: 500 }
     );
   }
