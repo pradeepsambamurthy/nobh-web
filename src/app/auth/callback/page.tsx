@@ -1,5 +1,6 @@
-// src/app/auth/callback/page.tsx
+export const dynamic = "force-dynamic";
 "use client";
+
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getPkceVerifier, clearPkce } from "@/lib/auth/pkce";
@@ -16,7 +17,12 @@ export default function AuthCallback() {
     const run = async () => {
       const sp = new URLSearchParams(window.location.search);
       const code = sp.get("code");
-      const state = sp.get("state"); // 👈 comes back from Cognito
+      const state = sp.get("state");
+
+      console.log("[callback] before read", {
+        url: window.location.href,
+        localHas: !!localStorage.getItem("pkce_code_verifier"),
+      });
 
       if (!code) { alert("No 'code' in URL"); return; }
 
@@ -43,15 +49,13 @@ export default function AuthCallback() {
         });
 
         const text = await resp.text();
-        console.log("[callback] /api/auth/callback status", resp.status, "body:", text);
-        if (!resp.ok) { alert("Token exchange failed. See console for details."); return; }
+        console.log("[callback] token exchange status", resp.status, "body:", text);
+        if (!resp.ok) { alert("Token exchange failed. See console."); return; }
 
         clearPkce();
 
-        // 👇 prefer state (decoded), fall back to /residents
         const decoded = state ? decodeURIComponent(state) : "/residents";
-        const next = safeInternalPath(decoded) ? decoded : "/residents";
-        router.replace(next);
+        router.replace(safeInternalPath(decoded) ? decoded : "/residents");
       } catch (e) {
         console.error(e);
         alert("Unexpected error during login. Check console.");
