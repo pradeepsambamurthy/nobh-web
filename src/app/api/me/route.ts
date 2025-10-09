@@ -1,20 +1,33 @@
+// src/app/api/me/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
-function decodeJwt<T=any>(jwt: string): T | null {
+export const runtime = "nodejs"; // enables Buffer in Vercel
+
+function decodeJwt<T extends Record<string, unknown>>(jwt: string): T | null {
   try {
-    const b64 = jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(Buffer.from(b64, "base64").toString("utf-8"));
-  } catch { return null; }
+    const b64 = jwt.split(".")[1]!.replace(/-/g, "+").replace(/_/g, "/");
+    const json = Buffer.from(b64, "base64").toString("utf-8");
+    return JSON.parse(json) as T;
+  } catch {
+    return null;
+  }
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(req: NextRequest): Promise<NextResponse> {
   const id = req.cookies.get("id_token")?.value;
   if (!id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const claims = decodeJwt(id);
+
+  const claims = decodeJwt<{
+    email?: string;
+    name?: string;
+    sub?: string;
+    "cognito:groups"?: string[];
+  }>(id);
+
   return NextResponse.json({
-    email: claims?.email,
-    name: claims?.name,
-    sub: claims?.sub,
-    groups: claims?.["cognito:groups"] || [],
+    email: claims?.email ?? null,
+    name: claims?.name ?? null,
+    sub: claims?.sub ?? null,
+    groups: claims?.["cognito:groups"] ?? [],
   });
 }
