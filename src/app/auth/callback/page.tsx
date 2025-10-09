@@ -21,13 +21,14 @@ export default function AuthCallback() {
       console.log("[callback] before read", {
         url: window.location.href,
         localHas: !!localStorage.getItem("pkce_code_verifier"),
+        cookieHas: document.cookie.includes("pkce_code_verifier="),
       });
 
       if (!code) { alert("No 'code' in URL"); return; }
 
       let code_verifier: string;
       try {
-        code_verifier = getPkceVerifier();
+        code_verifier = getPkceVerifier(); // reads ls OR cookie
       } catch (e) {
         console.error(e);
         alert("Missing PKCE verifier. Please click Login again from the home page.");
@@ -51,7 +52,7 @@ export default function AuthCallback() {
         console.log("[callback] token exchange status", resp.status, "body:", text);
         if (!resp.ok) { alert("Token exchange failed. See console."); return; }
 
-        clearPkce();
+        clearPkce(); // remove ls + cookie
 
         const decoded = state ? decodeURIComponent(state) : "/residents";
         router.replace(safeInternalPath(decoded) ? decoded : "/residents");

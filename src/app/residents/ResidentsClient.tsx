@@ -1,3 +1,4 @@
+// src/app/residents/ResidentsClient.tsx
 'use client';
 
 import { useMemo, useState } from "react";
@@ -43,7 +44,9 @@ export default function ResidentsClient() {
       : data.slice();
 
     arr.sort((a, b) =>
-      sortBy === "unit" ? a.unit.localeCompare(b.unit) : a.name.localeCompare(b.name)
+      sortBy === "unit"
+        ? a.unit.localeCompare(b.unit)
+        : a.name.localeCompare(b.name)
     );
     return arr;
   }, [data, search, sortBy]);
@@ -57,6 +60,7 @@ export default function ResidentsClient() {
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold">Residents</h1>
+
           <div className="flex items-center gap-3">
             <div className="flex gap-2">
               <Input
@@ -75,7 +79,11 @@ export default function ResidentsClient() {
                 </SelectContent>
               </Select>
             </div>
-            <button className="text-sm underline" onClick={() => (window.location.href = "/api/auth/logout")}>
+
+            <button
+              className="text-sm underline"
+              onClick={() => (window.location.href = "/api/auth/logout")}
+            >
               Sign out
             </button>
           </div>
@@ -92,7 +100,9 @@ export default function ResidentsClient() {
               </div>
             </Card>
           ))}
-          {filtered.length === 0 && <p className="text-muted-foreground">No residents found.</p>}
+          {filtered.length === 0 && (
+            <p className="text-muted-foreground">No residents found.</p>
+          )}
         </div>
       </main>
     </AppShell>
