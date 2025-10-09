@@ -1,9 +1,5 @@
 'use client';
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
-export const fetchCache = 'force-no-store';
 
-import ResidentsClient from './ResidentsClient';
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import axios from "axios";
@@ -26,7 +22,7 @@ async function fetchResidents(): Promise<Resident[]> {
   return res.data.data as Resident[];
 }
 
-export default function ResidentsPage() {
+export default function ResidentsClient() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["residents"],
     queryFn: fetchResidents,
@@ -47,9 +43,7 @@ export default function ResidentsPage() {
       : data.slice();
 
     arr.sort((a, b) =>
-      sortBy === "unit"
-        ? a.unit.localeCompare(b.unit)
-        : a.name.localeCompare(b.name)
+      sortBy === "unit" ? a.unit.localeCompare(b.unit) : a.name.localeCompare(b.name)
     );
     return arr;
   }, [data, search, sortBy]);
@@ -63,7 +57,6 @@ export default function ResidentsPage() {
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold">Residents</h1>
-
           <div className="flex items-center gap-3">
             <div className="flex gap-2">
               <Input
@@ -82,12 +75,7 @@ export default function ResidentsPage() {
                 </SelectContent>
               </Select>
             </div>
-
-            {/* ✅ Sign out button */}
-            <button
-              className="text-sm underline"
-              onClick={() => (window.location.href = "/api/auth/logout")}
-            >
+            <button className="text-sm underline" onClick={() => (window.location.href = "/api/auth/logout")}>
               Sign out
             </button>
           </div>
@@ -104,10 +92,7 @@ export default function ResidentsPage() {
               </div>
             </Card>
           ))}
-
-          {filtered.length === 0 && (
-            <p className="text-muted-foreground">No residents found.</p>
-          )}
+          {filtered.length === 0 && <p className="text-muted-foreground">No residents found.</p>}
         </div>
       </main>
     </AppShell>
