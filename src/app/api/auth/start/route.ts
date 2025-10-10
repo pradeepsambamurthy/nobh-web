@@ -4,57 +4,41 @@ import { randomBytes, createHash } from "node:crypto";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function b64url(buf: Buffer | Uint8Array) {
-  return Buffer.from(buf)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-}
+const b64url = (b: Buffer | Uint8Array) =>
+  Buffer.from(b).toString("base64").replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
 
 export async function GET() {
-  const COGNITO_DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
-  const CLIENT_ID      = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
-  const REDIRECT_URI   = process.env.NEXT_PUBLIC_REDIRECT_URI!;
-  const SCOPES         = "openid email profile";
-
-  if (!COGNITO_DOMAIN || !CLIENT_ID || !REDIRECT_URI) {
-    console.error("[auth/start] Missing env vars");
+  const DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
+  const CLIENT = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
+  const REDIR  = process.env.NEXT_PUBLIC_REDIRECT_URI!;
+  if (!DOMAIN || !CLIENT || !REDIR) {
     return NextResponse.json({ error: "env_missing" }, { status: 500 });
   }
 
-  // Generate PKCE verifier & challenge
+  // PKCE
   const verifier  = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
 
-  // Build Cognito authorize URL
-  const authUrl = new URL(`${COGNITO_DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
-  authUrl.searchParams.set("client_id", CLIENT_ID);
-  authUrl.searchParams.set("response_type", "code");
-  authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
-  authUrl.searchParams.set("scope", SCOPES);
-  authUrl.searchParams.set("code_challenge", challenge);
-  authUrl.searchParams.set("code_challenge_method", "S256");
-  authUrl.searchParams.set("state", encodeURIComponent("/residents"));
+  // Build authorize URL
+  const auth = new URL(`${DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
+  auth.searchParams.set("client_id", CLIENT);
+  auth.searchParams.set("response_type", "code");
+  auth.searchParams.set("redirect_uri", REDIR);
+  auth.searchParams.set("scope", "openid email profile");
+  auth.searchParams.set("code_challenge", challenge);
+  auth.searchParams.set("code_challenge_method", "S256");
+  auth.searchParams.set("state", encodeURIComponent("/residents"));
 
-  // Force secure cookie base
-  const cookieBase = {
-    httpOnly: true as const,
-    sameSite: "none" as const,   
-    secure: true,                
+  // Set PKCE verifier cookie (must be cross-site friendly)
+  const res = NextResponse.redirect(auth.toString(), { status: 302 });
+  res.cookies.set("pkce_v", verifier, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "none",   // <-- critical for IdP redirect
     path: "/",
-    maxAge: 900,                 
-  };
-
-  // Create redirect response
-  const res = NextResponse.redirect(authUrl.toString(), { status: 302 });
-  res.cookies.set("pkce_v", verifier, cookieBase);
-
-  console.log("[auth/start] PKCE cookie set:", verifier.slice(0, 8) + "...");
-
+    maxAge: 15 * 60,
+  });
   return res;
 }
 
-export async function POST() {
-  return GET();
-}
+export async function POST() { return GET(); }
