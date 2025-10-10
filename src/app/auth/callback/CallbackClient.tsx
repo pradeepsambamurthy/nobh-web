@@ -1,12 +1,8 @@
-// app/auth/callback/CallbackClient.tsx  (CLIENT component)
+// app/auth/callback/CallbackClient.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-
-const COGNITO_DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
-const CLIENT_ID      = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
-const REDIRECT_URI   = process.env.NEXT_PUBLIC_REDIRECT_URI!;
 
 export default function CallbackClient(props: {
   code: string;
@@ -23,6 +19,10 @@ export default function CallbackClient(props: {
     if (fired.current) return;
     fired.current = true;
 
+    // 1) Strip query ASAP so rehydration doesn't retrigger
+    try { window.history.replaceState({}, "", "/auth/callback"); } catch {}
+
+    // 2) Handle error or missing code
     if (error) {
       setMsg(`Sign-in failed: ${decodeURIComponent(error_description) || error}`);
       return;
@@ -32,6 +32,7 @@ export default function CallbackClient(props: {
       return;
     }
 
+    // 3) Exchange exactly once
     (async () => {
       try {
         setMsg("Exchanging code for tokens…");
@@ -39,13 +40,13 @@ export default function CallbackClient(props: {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code }),
-           
+          body: JSON.stringify({ code }), // only send code
         });
 
+        const data = await resp.json().catch(() => ({}));
+
         if (!resp.ok) {
-          const detail = await resp.json().catch(() => ({}));
-          console.error("[callback] token exchange failed", detail);
+          console.error("[callback] token exchange failed", data);
           setMsg(`Token exchange failed (${resp.status}).`);
           return;
         }
@@ -58,7 +59,7 @@ export default function CallbackClient(props: {
         setMsg("Unexpected error during sign-in.");
       }
     })();
-  }, [code, error, error_description, router, state]);
+  }, []); // ✅ run once
 
   return (
     <main className="min-h-screen grid place-items-center p-8">
