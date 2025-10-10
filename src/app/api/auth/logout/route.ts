@@ -1,15 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { COGNITO_DOMAIN, COGNITO_CLIENT_ID, SIGNOUT_URI } from "@/lib/auth/config";
 
-const DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
-const CLIENT_ID = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
-const SIGNOUT_URI = process.env.NEXT_PUBLIC_SIGNOUT_URI!; // e.g. http://localhost:3001/
-
-export async function GET() {
+export async function GET(_req: NextRequest) {
   const res = NextResponse.redirect(
-    `${DOMAIN.replace(/\/$/,"")}/logout?client_id=${CLIENT_ID}&logout_uri=${encodeURIComponent(SIGNOUT_URI)}`
+    `${COGNITO_DOMAIN}/logout?client_id=${encodeURIComponent(COGNITO_CLIENT_ID)}&logout_uri=${encodeURIComponent(SIGNOUT_URI)}`
   );
-  ["access_token","id_token","refresh_token","logged_in"].forEach(n =>
-    res.cookies.set(n, "", { path: "/", maxAge: 0 })
-  );
+
+  // clear our cookies
+  const opts = { path: "/", maxAge: 0 };
+  res.cookies.set("access_token", "", opts);
+  res.cookies.set("id_token", "", opts);
+  res.cookies.set("logged_in", "", opts);
+
   return res;
 }

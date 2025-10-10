@@ -5,28 +5,23 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function b64url(buf: Buffer | Uint8Array) {
-  return Buffer.from(buf)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+  return Buffer.from(buf).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 export async function GET() {
   const COGNITO_DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
-  const CLIENT_ID = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
-  const REDIRECT_URI = process.env.NEXT_PUBLIC_REDIRECT_URI!;
-  const SCOPES = "openid email profile";
+  const CLIENT_ID      = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
+  const REDIRECT_URI   = process.env.NEXT_PUBLIC_REDIRECT_URI!;
+  const SCOPES         = "openid email profile";
 
   if (!COGNITO_DOMAIN || !CLIENT_ID || !REDIRECT_URI) {
     return NextResponse.json({ error: "env_missing" }, { status: 500 });
   }
 
-  // Generate PKCE verifier + challenge
-  const verifier = b64url(randomBytes(32));
+  const verifier  = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
 
-  // Build Cognito authorize URL
   const url = new URL(`${COGNITO_DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
   url.searchParams.set("client_id", CLIENT_ID);
   url.searchParams.set("response_type", "code");
@@ -36,20 +31,11 @@ export async function GET() {
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", encodeURIComponent("/residents"));
 
-  // Set cookie and redirect to Cognito
   const res = NextResponse.redirect(url.toString(), { status: 302 });
   res.cookies.set("pkce_v", verifier, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: !!process.env.VERCEL,
-    path: "/",
-    maxAge: 900, // 15 min
+    httpOnly: true, sameSite: "lax", secure: !!process.env.VERCEL, path: "/", maxAge: 900,
   });
-
   return res;
 }
 
-// Optional: allow POST for backward compatibility
-export async function POST() {
-  return GET();
-}
+export async function POST() { return GET(); }

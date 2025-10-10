@@ -2,14 +2,19 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-export function middleware(req: NextRequest) {
-  const { pathname, search } = req.nextUrl;
+function isSafeInternalPath(p?: string | null) {
+  return !!p && p.startsWith("/") && !p.startsWith("//");
+}
 
-  // Allow auth routes and static
+export function middleware(req: NextRequest) {
+  const { pathname, searchParams } = req.nextUrl;
+
+  // Allow auth + static + dev MSW file
   if (
     pathname.startsWith("/auth") ||
     pathname.startsWith("/_next") ||
-    pathname === "/favicon.ico"
+    pathname === "/favicon.ico" ||
+    pathname === "/mockServiceWorker.js" // <-- MSW in dev
   ) {
     return NextResponse.next();
   }
@@ -18,15 +23,18 @@ export function middleware(req: NextRequest) {
   if (!loggedIn) {
     const url = req.nextUrl.clone();
     url.pathname = "/";
-    // remember where they were going
-    url.searchParams.set("return_to", pathname + (search || ""));
+
+    const wanted = pathname + (req.nextUrl.search || "");
+    if (isSafeInternalPath(wanted)) {
+      url.searchParams.set("return_to", wanted);
+    }
     return NextResponse.redirect(url);
   }
 
   return NextResponse.next();
 }
 
-// Still exclude API/static via matcher (see note #2)
+// Exclude API + static from auth checks
 export const config = {
-  matcher: ["/((?!_next|favicon.ico|auth/.*|api/.*).*)"],
+  matcher: ["/((?!_next|favicon.ico|auth/.*|api/.*|mockServiceWorker.js).*)"],
 };

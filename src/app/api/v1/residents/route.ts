@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
   try {
-    // ✅ If API_BASE_URL not set, return mock residents
+    
     if (!process.env.API_BASE_URL || process.env.API_BASE_URL.trim() === "") {
       return NextResponse.json({
         data: [
