@@ -4,7 +4,7 @@ export default function Home() {
   const handleLogin = async () => {
     const r = await fetch("/api/auth/start", {
       method: "POST",
-      credentials: "same-origin", // ensures Set-Cookie is accepted
+      credentials: "same-origin",
     });
 
     if (!r.ok) {
@@ -13,14 +13,14 @@ export default function Home() {
       return;
     }
 
-    const { authorizeUrl } = (await r.json()) as { authorizeUrl?: string };
+    const { authorizeUrl } = (await r.json().catch(() => ({}))) as { authorizeUrl?: string };
     if (!authorizeUrl) {
       console.error("[login] missing authorizeUrl");
       alert("Login init failed (no url).");
       return;
     }
 
-    // Top-level navigation to Cognito Hosted UI
+    // top-level navigation to Cognito
     window.location.href = authorizeUrl;
   };
 

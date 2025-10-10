@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Read a single cookie from the raw request headers
+// read a single cookie from the raw request headers
 function readCookieFromHeader(req: Request, name: string): string | null {
   const raw = req.headers.get("cookie") ?? "";
   const hit = raw.split(";").map(s => s.trim()).find(s => s.startsWith(name + "="));
@@ -19,7 +19,6 @@ export async function POST(req: Request) {
 
     const { code, redirect_uri, cognito_domain, client_id } = payload;
 
-    // PKCE verifier set by /api/auth/start
     const code_verifier = readCookieFromHeader(req, "pkce_v");
 
     if (!code || !redirect_uri || !cognito_domain || !client_id || !code_verifier) {
@@ -50,10 +49,12 @@ export async function POST(req: Request) {
     });
 
     const json = await tokenResp.json().catch(() => null);
+
     if (!tokenResp.ok) {
+      // Pass Cognito status through (400 invalid_grant, etc.)
       return NextResponse.json(
         { error: "token_exchange_failed", status: tokenResp.status, details: json },
-        { status: 500 }
+        { status: tokenResp.status }
       );
     }
 
