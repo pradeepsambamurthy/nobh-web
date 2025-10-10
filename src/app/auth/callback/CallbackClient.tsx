@@ -1,20 +1,22 @@
+// app/auth/callback/CallbackClient.tsx  (CLIENT component)
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 const COGNITO_DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
-const CLIENT_ID = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
-const REDIRECT_URI = process.env.NEXT_PUBLIC_REDIRECT_URI!;
+const CLIENT_ID      = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
+const REDIRECT_URI   = process.env.NEXT_PUBLIC_REDIRECT_URI!;
 
-export default function CallbackClient() {
+export default function CallbackClient(props: {
+  code: string;
+  error: string;
+  error_description: string;
+  state: string;
+}) {
+  const { code, error, error_description, state } = props;
   const router = useRouter();
-  const qp = useSearchParams();
   const fired = useRef(false);
-  const code = qp.get("code");
-  const error = qp.get("error");
-  const errorDesc = qp.get("error_description") ?? "";
-  const state = qp.get("state");
   const [msg, setMsg] = useState("Signing you in…");
 
   useEffect(() => {
@@ -22,7 +24,7 @@ export default function CallbackClient() {
     fired.current = true;
 
     if (error) {
-      setMsg(`Sign-in failed: ${decodeURIComponent(errorDesc) || error}`);
+      setMsg(`Sign-in failed: ${decodeURIComponent(error_description) || error}`);
       return;
     }
     if (!code) {
@@ -60,7 +62,7 @@ export default function CallbackClient() {
         setMsg("Unexpected error during sign-in.");
       }
     })();
-  }, [code, error, errorDesc, router, state]);
+  }, [code, error, error_description, router, state]);
 
   return (
     <main className="min-h-screen grid place-items-center p-8">
