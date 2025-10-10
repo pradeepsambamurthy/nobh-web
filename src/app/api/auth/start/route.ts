@@ -1,4 +1,3 @@
-// src/app/api/auth/start/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes, createHash } from "node:crypto";
 
@@ -27,7 +26,7 @@ export async function GET(_req: NextRequest) {
   const verifier  = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
 
-  // AWS Cognito authorize URL
+  // Cognito authorize URL
   const authorize = new URL(`${DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
   authorize.searchParams.set("client_id", CLIENT);
   authorize.searchParams.set("response_type", "code");
@@ -35,22 +34,20 @@ export async function GET(_req: NextRequest) {
   authorize.searchParams.set("scope", SCOPES);
   authorize.searchParams.set("code_challenge", challenge);
   authorize.searchParams.set("code_challenge_method", "S256");
-  authorize.searchParams.set("state", encodeURIComponent("/residents"));
 
-  // Redirect back to Cognito
+  // ✅ FIX: no extra encoding
+  authorize.searchParams.set("state", "/residents");
+
+  // Redirect + set cookie
   const res = NextResponse.redirect(authorize.toString(), { status: 302 });
-
-  // Set a host-only, secure cookie. SameSite=Lax is correct for top-level navigations.
-  // Use __Host- prefix for extra safety (requires Secure, path=/, and NO Domain attr).
-  res.cookies.set("__Host-pkce_v", verifier, {
+  res.cookies.set("pkce_v", verifier, {
     httpOnly: true,
     secure: true,
     sameSite: "lax",
     path: "/",
-    maxAge: 15 * 60, // 15 minutes
+    maxAge: 15 * 60,
   });
 
-  console.log("[auth/start] set __Host-pkce_v (len=%d)", verifier.length);
   return res;
 }
 

@@ -9,17 +9,14 @@ function isSafeInternalPath(p?: string | null) {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 1) Always allow preflight
-  if (req.method === "OPTIONS") return NextResponse.next();
-
-  // 2) Allow auth handshake + API + Next/static + common public files
+  // ✅ Always allow homepage and static assets
   if (
+    pathname === "/" ||
     pathname.startsWith("/auth") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
     pathname === "/robots.txt" ||
-    pathname === "/sitemap.xml" ||
     pathname.endsWith(".png") ||
     pathname.endsWith(".jpg") ||
     pathname.endsWith(".jpeg") ||
@@ -29,10 +26,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 3) Allow home (login link)
-  if (pathname === "/") return NextResponse.next();
-
-  // 4) Gate everything else on auth cookies
+  // ✅ Protect everything else
   const loggedIn =
     !!req.cookies.get("id_token")?.value ||
     !!req.cookies.get("access_token")?.value;
