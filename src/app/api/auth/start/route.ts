@@ -1,4 +1,4 @@
-// /src/app/api/auth/start/route.ts
+// src/app/api/auth/start/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { randomBytes, createHash } from "node:crypto";
 
@@ -13,7 +13,7 @@ function b64url(buf: Buffer | Uint8Array) {
     .replace(/=+$/g, "");
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const DOMAIN   = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
   const CLIENT   = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
   const REDIRECT = process.env.NEXT_PUBLIC_REDIRECT_URI!;
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const verifier  = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
 
-  // Cognito authorize URL
+  // AWS Cognito authorize URL
   const authorize = new URL(`${DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
   authorize.searchParams.set("client_id", CLIENT);
   authorize.searchParams.set("response_type", "code");
@@ -37,25 +37,20 @@ export async function GET(req: NextRequest) {
   authorize.searchParams.set("code_challenge_method", "S256");
   authorize.searchParams.set("state", encodeURIComponent("/residents"));
 
-  // Redirect + set cookies
+  // Redirect back to Cognito
   const res = NextResponse.redirect(authorize.toString(), { status: 302 });
 
-  // Strongest cookie (Chrome/Firefox/Safari friendly across cross-site redirects)
-  // __Host- requires: Secure, Path=/, and NO Domain attribute.
-  const common = {
+  // Set a host-only, secure cookie. SameSite=Lax is correct for top-level navigations.
+  // Use __Host- prefix for extra safety (requires Secure, path=/, and NO Domain attr).
+  res.cookies.set("__Host-pkce_v", verifier, {
     httpOnly: true,
     secure: true,
-    sameSite: "none" as const,
+    sameSite: "lax",
     path: "/",
-    maxAge: 15 * 60,
-  };
+    maxAge: 15 * 60, // 15 minutes
+  });
 
-  // Primary cookie with __Host- prefix
-  res.cookies.set("__Host-pkce_v", verifier, common);
-
-  // Fallback cookie (in case some envs don’t like the prefix)
-  res.cookies.set("pkce_v", verifier, common);
-
+  console.log("[auth/start] set __Host-pkce_v (len=%d)", verifier.length);
   return res;
 }
 

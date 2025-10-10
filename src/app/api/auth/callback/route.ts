@@ -86,19 +86,19 @@ export async function GET(req: NextRequest) {
 
     const res = NextResponse.redirect(nextUrl, { status: 302 });
 
-    const base = { httpOnly: true as const, sameSite: "lax" as const, secure: !!process.env.VERCEL, path: "/" };
+    const base = { httpOnly: true as const, secure: true, sameSite: "lax" as const, path: "/" };
     const max  = Math.max(60, Number(expires_in ?? 3600));
 
     if (id_token)     res.cookies.set("id_token", id_token,         { ...base, maxAge: max });
     if (access_token) res.cookies.set("access_token", access_token, { ...base, maxAge: max });
-    if (refresh_token)res.cookies.set("refresh_token", refresh_token,{ ...base, maxAge: 60*60*24*7 });
+    if (refresh_token)res.cookies.set("refresh_token", refresh_token,{ ...base, maxAge: 7 * 24 * 60 * 60 });
 
     // clear one-time PKCE
-    res.cookies.set("pkce_v", "", { ...base, maxAge: 0 });
+    res.cookies.set("pkce_v", "",        { ...base, maxAge: 0 });
+    res.cookies.set("__Host-pkce_v", "", { ...base, maxAge: 0 });
 
-    // OPTIONAL: If your middleware requires a 'logged_in' flag, set it (non-httpOnly)
-    // res.cookies.set("logged_in", "true", { ...base, httpOnly: false, maxAge: max });
-
+    // Optional non-httpOnly flag if your client UI checks cookies
+    res.cookies.set("logged_in", "true", { httpOnly: false, secure: true, sameSite: "lax", path: "/", maxAge: max });
     return res;
   } catch (e) {
     console.error("[auth/callback] unexpected", e);
