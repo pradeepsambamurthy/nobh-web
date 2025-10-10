@@ -6,14 +6,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function b64url(buf: Buffer | Uint8Array) {
-  return Buffer.from(buf)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
+  return Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const DOMAIN   = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
   const CLIENT   = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
   const REDIRECT = process.env.NEXT_PUBLIC_REDIRECT_URI!;
@@ -37,16 +33,16 @@ export async function GET(req: NextRequest) {
   authorize.searchParams.set("code_challenge_method", "S256");
   authorize.searchParams.set("state", encodeURIComponent("/residents"));
 
-  // Redirect response
+  // Redirect + set cookie
   const res = NextResponse.redirect(authorize.toString(), { status: 302 });
 
-  // Cross-site safe cookie so it survives the Cognito round-trip
+  // Host-only cookie (no `domain`), delivered on top-level nav back (Lax)
   res.cookies.set("pkce_v", verifier, {
     httpOnly: true,
-    secure: true,
-    sameSite: "none",   // required for IdP redirect
+    secure: true,          // required on Vercel (HTTPS)
+    sameSite: "lax",
     path: "/",
-    maxAge: 15 * 60,    // 15 minutes
+    maxAge: 15 * 60,
   });
 
   return res;
