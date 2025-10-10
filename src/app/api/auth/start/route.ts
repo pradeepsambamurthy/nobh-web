@@ -1,50 +1,48 @@
-// middleware.ts
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+import { randomBytes, createHash } from "node:crypto";
 
-function isSafeInternalPath(p?: string | null) {
-  return !!p && p.startsWith("/") && !p.startsWith("//");
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function b64url(buf: Buffer | Uint8Array) {
+  return Buffer.from(buf).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+export async function GET() {
+  const COGNITO_DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
+  const CLIENT_ID      = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
+  const REDIRECT_URI   = process.env.NEXT_PUBLIC_REDIRECT_URI!;
+  const SCOPES         = "openid email profile";
 
-  // 1) Always allow the auth handshake, static files, and service worker
-  if (
-    pathname.startsWith("/auth") ||          // /auth/callback
-    pathname.startsWith("/api/auth") ||      // /api/auth/start, /api/auth/callback, /api/auth/logout
-    pathname.startsWith("/_next") ||
-    pathname === "/favicon.ico" ||
-    pathname === "/mockServiceWorker.js"
-  ) {
-    return NextResponse.next();
+  if (!COGNITO_DOMAIN || !CLIENT_ID || !REDIRECT_URI) {
+    return NextResponse.json({ error: "env_missing" }, { status: 500 });
   }
 
-  // 2) Always allow the public home page so users can see the Login button
-  if (pathname === "/") {
-    return NextResponse.next();
-  }
+  // PKCE
+  const verifier  = b64url(randomBytes(32));
+  const challenge = b64url(createHash("sha256").update(verifier).digest());
 
-  // 3) Consider user logged in if we have tokens set by the callback route
-  const hasId   = !!req.cookies.get("id_token")?.value;
-  const hasAccess = !!req.cookies.get("access_token")?.value;
-  const loggedIn = hasId || hasAccess; // no need for a separate "logged_in" cookie
+  // Build Cognito authorize URL
+  const url = new URL(`${COGNITO_DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
+  url.searchParams.set("client_id", CLIENT_ID);
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("redirect_uri", REDIRECT_URI);
+  url.searchParams.set("scope", SCOPES);
+  url.searchParams.set("code_challenge", challenge);
+  url.searchParams.set("code_challenge_method", "S256");
+  url.searchParams.set("state", encodeURIComponent("/residents"));
 
-  if (!loggedIn) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/";
-
-    const wanted = pathname + (req.nextUrl.search || "");
-    if (isSafeInternalPath(wanted)) {
-      url.searchParams.set("return_to", wanted);
-    }
-    return NextResponse.redirect(url);
-  }
-
-  return NextResponse.next();
+  // Set PKCE verifier cookie and redirect
+  const res = NextResponse.redirect(url.toString(), { status: 302 });
+  res.cookies.set("pkce_v", verifier, {
+    httpOnly: true,
+    sameSite: "lax",           // top-level GET back to your site will send it
+    secure: !!process.env.VERCEL,
+    path: "/",
+    maxAge: 900,               // 15 minutes
+  });
+  return res;
 }
 
-// Exclude API + static + auth from auth checks
-export const config = {
-  matcher: ["/((?!_next|favicon.ico|auth/.*|api/auth/.*|mockServiceWorker.js).*)"],
-};
+export async function POST() { return GET(); }

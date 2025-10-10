@@ -1,12 +1,6 @@
 import { setPkceVerifier, createCodeChallenge } from './pkce';
 import { COGNITO_DOMAIN, COGNITO_CLIENT_ID, REDIRECT_URI } from './config';
 
-function randState(len = 32) {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let s = '';
-  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return s;
-}
 
 export async function startLogin() {
   // 1) PKCE verifier + challenge
