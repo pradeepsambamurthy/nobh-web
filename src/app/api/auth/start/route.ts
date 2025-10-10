@@ -6,8 +6,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function b64url(buf: Buffer | Uint8Array) {
-  return Buffer
-    .from(buf)
+  return Buffer.from(buf)
     .toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
@@ -41,16 +40,13 @@ export async function GET(req: NextRequest) {
   // Redirect response
   const res = NextResponse.redirect(authorize.toString(), { status: 302 });
 
-  // Make the cookie survive the IdP round-trip
-  const host = req.nextUrl.hostname; // e.g. nobh-web.vercel.app
+  // Cross-site safe cookie so it survives the Cognito round-trip
   res.cookies.set("pkce_v", verifier, {
     httpOnly: true,
     secure: true,
-    sameSite: "none",          // <-- important for cross-site redirect
+    sameSite: "none",   // required for IdP redirect
     path: "/",
-    maxAge: 15 * 60,
-    // Set domain only in prod builds; omit on localhost so it still works
-    ...(process.env.VERCEL ? { domain: host } : {}),
+    maxAge: 15 * 60,    // 15 minutes
   });
 
   return res;
