@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// read a single cookie from the raw request headers
+// Read a single cookie from the raw request headers
 function readCookieFromHeader(req: Request, name: string): string | null {
   const raw = req.headers.get("cookie") ?? "";
   const hit = raw.split(";").map(s => s.trim()).find(s => s.startsWith(name + "="));

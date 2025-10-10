@@ -40,7 +40,6 @@ export default function AuthCallback() {
         return;
       }
 
-      // success -> go where state asked, else /residents
       const dest = state ? decodeURIComponent(state) : "/residents";
       router.replace(dest.startsWith("/") && !dest.startsWith("//") ? dest : "/residents");
     };

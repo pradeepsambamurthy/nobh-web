@@ -26,7 +26,7 @@ export async function POST() {
   const verifier  = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
 
-  // Build the Cognito authorize URL (ALL required params present)
+  // Build authorize URL
   const url = new URL(`${COGNITO_DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
   url.searchParams.set("client_id", CLIENT_ID);
   url.searchParams.set("response_type", "code");
@@ -36,16 +36,14 @@ export async function POST() {
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", encodeURIComponent("/residents"));
 
-  // Prepare response JSON
-  const res = NextResponse.json({ authorizeUrl: url.toString() });
-
-  // One-time PKCE cookie (read later in callback)
+  // Return JSON + set one-time PKCE cookie
+  const res = NextResponse.json({ authorizeUrl: url.toString() }, { headers: { "Cache-Control": "no-store" } });
   res.cookies.set("pkce_v", verifier, {
     httpOnly: true,
-    sameSite: "lax",   // allows top-level nav back from Cognito
-    secure: !!process.env.VERCEL, // true on Vercel
+    sameSite: "lax",
+    secure: !!process.env.VERCEL, // true in production
     path: "/",
-    maxAge: 300,       // 5 minutes
+    maxAge: 300, // 5 minutes
   });
 
   return res;
