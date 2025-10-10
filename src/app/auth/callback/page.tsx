@@ -1,70 +1,80 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 const COGNITO_DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
-const CLIENT_ID      = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
-const REDIRECT_URI   = process.env.NEXT_PUBLIC_REDIRECT_URI!;
+const CLIENT_ID = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
+const REDIRECT_URI = process.env.NEXT_PUBLIC_REDIRECT_URI!; // must match this page’s URL
 
-export default function AuthCallback() {
+export default function CallbackPage() {
   const router = useRouter();
-  const ran = useRef(false);
+  const qp = useSearchParams();
+  const fired = useRef(false);
+
+  const code = qp.get("code");
+  const error = qp.get("error");
+  const errorDesc = qp.get("error_description") ?? "";
+  const state = qp.get("state"); // we encoded desired path in /api/auth/start
+  const [msg, setMsg] = useState("Signing you in…");
 
   useEffect(() => {
-    if (ran.current) return;          // guard against double run in Strict Mode
-    ran.current = true;
+    // avoid double-runs in React strict mode
+    if (fired.current) return;
+    fired.current = true;
+
+    // If Cognito bounced us with an error
+    if (error) {
+      setMsg(`Sign-in failed: ${decodeURIComponent(errorDesc) || error}`);
+      return;
+    }
+
+    // Must have `code` from Cognito
+    if (!code) {
+      setMsg("No authorization code found in the URL.");
+      return;
+    }
 
     (async () => {
-      const sp = new URLSearchParams(window.location.search);
-      const code  = sp.get("code");
-      const state = sp.get("state") ?? "";
-
-      if (!code) {
-        alert("No authorization code in URL.");
-        return;
-      }
-
-      // Prevent reuse on reload/back: strip query immediately and mark in session
       try {
-        const key = `handled_code:${code}`;
-        if (sessionStorage.getItem(key)) return;
-        sessionStorage.setItem(key, "1");
-      } catch {}
-      window.history.replaceState({}, "", window.location.origin + window.location.pathname);
+        setMsg("Exchanging code for tokens…");
 
-      const r = await fetch("/api/auth/callback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          code,
-          redirect_uri: REDIRECT_URI,
-          cognito_domain: COGNITO_DOMAIN,
-          client_id: CLIENT_ID,
-        }),
-      });
+        const resp = await fetch("/api/auth/callback", {
+          method: "POST",
+          credentials: "include", // send pkce_v cookie
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code,
+            redirect_uri: REDIRECT_URI,
+            cognito_domain: COGNITO_DOMAIN,
+            client_id: CLIENT_ID,
+          }),
+        });
 
-      const text = await r.text().catch(() => "");
-      if (!r.ok) {
-        console.error("[callback] token exchange failed", r.status, text);
-        // If cookies were already set by a previous attempt, just continue.
-        try {
-          const hasId = document.cookie.includes("id_token=");
-          if (hasId) {
-            const dest = state ? decodeURIComponent(state) : "/residents";
-            router.replace(dest.startsWith("/") && !dest.startsWith("//") ? dest : "/residents");
-            return;
-          }
-        } catch {}
-        alert("Token exchange failed. See console.");
-        return;
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => ({}));
+          console.error("[callback] token exchange failed", detail);
+          setMsg(`Token exchange failed (${resp.status}).`);
+          return;
+        }
+
+        // Success → tokens are now in HttpOnly cookies.
+        const next = state ? decodeURIComponent(state) : "/";
+        setMsg("Signed in! Redirecting…");
+        router.replace(next);
+      } catch (e) {
+        console.error("[callback] unexpected", e);
+        setMsg("Unexpected error during sign-in.");
       }
-
-      const dest = state ? decodeURIComponent(state) : "/residents";
-      router.replace(dest.startsWith("/") && !dest.startsWith("//") ? dest : "/residents");
     })();
-  }, [router]);
+  }, [code, error, errorDesc, router, state]);
 
-  return <main className="p-6">Signing you in…</main>;
+  return (
+    <main className="min-h-screen grid place-items-center p-8">
+      <div className="text-center">
+        <h1 className="text-2xl font-semibold mb-2">NoBrokerHood+ Admin</h1>
+        <p className="text-gray-600">{msg}</p>
+      </div>
+    </main>
+  );
 }

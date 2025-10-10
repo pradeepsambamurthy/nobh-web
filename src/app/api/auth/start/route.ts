@@ -12,21 +12,21 @@ function b64url(buf: Buffer | Uint8Array) {
     .replace(/=+$/g, "");
 }
 
-export async function POST() {
+export async function GET() {
   const COGNITO_DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
-  const CLIENT_ID      = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
-  const REDIRECT_URI   = process.env.NEXT_PUBLIC_REDIRECT_URI!;
-  const SCOPES         = "openid email profile";
+  const CLIENT_ID = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
+  const REDIRECT_URI = process.env.NEXT_PUBLIC_REDIRECT_URI!;
+  const SCOPES = "openid email profile";
 
   if (!COGNITO_DOMAIN || !CLIENT_ID || !REDIRECT_URI) {
     return NextResponse.json({ error: "env_missing" }, { status: 500 });
   }
 
-  // PKCE verifier + challenge
-  const verifier  = b64url(randomBytes(32));
+  // Generate PKCE verifier + challenge
+  const verifier = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
 
-  // Build authorize URL
+  // Build Cognito authorize URL
   const url = new URL(`${COGNITO_DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
   url.searchParams.set("client_id", CLIENT_ID);
   url.searchParams.set("response_type", "code");
@@ -36,15 +36,20 @@ export async function POST() {
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", encodeURIComponent("/residents"));
 
-  // Return JSON + set one-time PKCE cookie
-  const res = NextResponse.json({ authorizeUrl: url.toString() }, { headers: { "Cache-Control": "no-store" } });
+  // Set cookie and redirect to Cognito
+  const res = NextResponse.redirect(url.toString(), { status: 302 });
   res.cookies.set("pkce_v", verifier, {
     httpOnly: true,
     sameSite: "lax",
-    secure: !!process.env.VERCEL, // true in production
+    secure: !!process.env.VERCEL,
     path: "/",
-    maxAge: 300, // 5 minutes
+    maxAge: 900, // 15 min
   });
 
   return res;
+}
+
+// Optional: allow POST for backward compatibility
+export async function POST() {
+  return GET();
 }
