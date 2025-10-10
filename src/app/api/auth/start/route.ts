@@ -1,4 +1,3 @@
-// /src/app/api/auth/start/route.ts
 import { NextResponse } from "next/server";
 import { randomBytes, createHash } from "node:crypto";
 
@@ -20,39 +19,42 @@ export async function GET() {
   const SCOPES         = "openid email profile";
 
   if (!COGNITO_DOMAIN || !CLIENT_ID || !REDIRECT_URI) {
+    console.error("[auth/start] Missing env vars");
     return NextResponse.json({ error: "env_missing" }, { status: 500 });
   }
 
-  // PKCE
+  // Generate PKCE verifier & challenge
   const verifier  = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
 
-  // Authorize URL
-  const url = new URL(`${COGNITO_DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
-  url.searchParams.set("client_id", CLIENT_ID);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("redirect_uri", REDIRECT_URI);
-  url.searchParams.set("scope", SCOPES);
-  url.searchParams.set("code_challenge", challenge);
-  url.searchParams.set("code_challenge_method", "S256");
-  url.searchParams.set("state", encodeURIComponent("/residents"));
+  // Build Cognito authorize URL
+  const authUrl = new URL(`${COGNITO_DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
+  authUrl.searchParams.set("client_id", CLIENT_ID);
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+  authUrl.searchParams.set("scope", SCOPES);
+  authUrl.searchParams.set("code_challenge", challenge);
+  authUrl.searchParams.set("code_challenge_method", "S256");
+  authUrl.searchParams.set("state", encodeURIComponent("/residents"));
 
-  // Redirect + cookie
-  const res = NextResponse.redirect(url.toString(), { status: 302 });
-
+  // Force secure cookie base
   const cookieBase = {
     httpOnly: true as const,
-    sameSite: "lax" as const,
-    secure: !!process.env.VERCEL, // true on Vercel, false locally
+    sameSite: "none" as const,   
+    secure: true,                
     path: "/",
-    maxAge: 900, // 15 minutes
+    maxAge: 900,                 
   };
 
+  // Create redirect response
+  const res = NextResponse.redirect(authUrl.toString(), { status: 302 });
   res.cookies.set("pkce_v", verifier, cookieBase);
+
+  console.log("[auth/start] PKCE cookie set:", verifier.slice(0, 8) + "...");
+
   return res;
 }
 
-// Optional: support POST for older callers
 export async function POST() {
   return GET();
 }
