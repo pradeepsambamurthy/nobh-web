@@ -5,35 +5,25 @@ import { cookies } from "next/headers";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Helper to safely decode a URI component
-function safeDecode(v: string) {
-  try { return decodeURIComponent(v); } catch { return v; }
-}
-
-// Define a proper interface for Cognito’s token response
-interface CognitoTokenResponse {
-  id_token?: string;
-  access_token?: string;
-  refresh_token?: string;
-  expires_in?: number;
-  [key: string]: unknown;
-}
-
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const code  = url.searchParams.get("code") || "";
     const error = url.searchParams.get("error") || "";
-    const errDesc = url.searchParams.get("error_description") || "";
+    const error_description = url.searchParams.get("error_description") || "";
     const state = url.searchParams.get("state") || "/";
 
     if (error) {
-      return new NextResponse(`Sign-in failed: ${safeDecode(errDesc) || error}`, { status: 400 });
+      return NextResponse.json(
+        { error: "auth_error", detail: decodeURIComponent(error_description) || error },
+        { status: 400 }
+      );
     }
     if (!code) {
-      return new NextResponse("Missing authorization code.", { status: 400 });
+      return NextResponse.json({ error: "missing_code" }, { status: 400 });
     }
 
+    // PKCE verifier from the cookie set by /api/auth/start
     const cookieStore = await cookies();
     const code_verifier = cookieStore.get("pkce_v")?.value ?? "";
 
@@ -41,7 +31,7 @@ export async function GET(req: NextRequest) {
     const CLIENT_ID      = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
     const REDIRECT_URI   = process.env.NEXT_PUBLIC_REDIRECT_URI;
 
-    if (!COGNITO_DOMAIN || !CLIENT_ID || !REDIRECT_URI || !code_verifier) {
+    if (!code_verifier || !COGNITO_DOMAIN || !CLIENT_ID || !REDIRECT_URI) {
       return NextResponse.json(
         {
           error: "missing_fields",
@@ -52,7 +42,7 @@ export async function GET(req: NextRequest) {
             code_verifier: !!code_verifier,
           },
         },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -72,43 +62,28 @@ export async function GET(req: NextRequest) {
       cache: "no-store",
     });
 
-    // ✅ Type-safe, no explicit `any`
-    const json: CognitoTokenResponse =
-      (await tokenResp.json().catch(() => ({}))) as CognitoTokenResponse;
-
+    const json = await tokenResp.json().catch(() => null);
     if (!tokenResp.ok) {
-      console.error("[auth/callback] token exchange failed", tokenResp.status, json);
       return NextResponse.json(
         { error: "token_exchange_failed", status: tokenResp.status, details: json },
-        { status: tokenResp.status },
+        { status: 400 }
       );
     }
 
-    const { id_token, access_token, refresh_token, expires_in } = json;
-    const nextUrl = state ? safeDecode(state) : "/";
+    const { id_token, access_token, refresh_token, expires_in } = json ?? {};
 
-    const res = NextResponse.redirect(nextUrl, { status: 302 });
+    const res = NextResponse.redirect(decodeURIComponent(state || "/"), { status: 302 });
 
-    const baseCookie = {
-      httpOnly: true,
-      sameSite: "lax" as const,
-      secure: !!process.env.VERCEL,
-      path: "/",
-    };
-    const max = Math.max(60, Number(expires_in ?? 3600));
+    // Set cookies (correct signature: name, value, options)
+    const base = { httpOnly: true as const, sameSite: "lax" as const, secure: !!process.env.VERCEL, path: "/" };
+    const max  = Math.max(60, Number(expires_in ?? 3600));
 
-    if (id_token) {
-      res.cookies.set({ name: "id_token", value: id_token, ...baseCookie, maxAge: max });
-    }
-    if (access_token) {
-      res.cookies.set({ name: "access_token", value: access_token, ...baseCookie, maxAge: max });
-    }
-    if (refresh_token) {
-      res.cookies.set({ name: "refresh_token", value: refresh_token, ...baseCookie, maxAge: 60 * 60 * 24 * 7 });
-    }
+    if (id_token)     res.cookies.set("id_token", id_token,         { ...base, maxAge: max });
+    if (access_token) res.cookies.set("access_token", access_token, { ...base, maxAge: max });
+    if (refresh_token)res.cookies.set("refresh_token", refresh_token,{ ...base, maxAge: 60*60*24*7 });
 
     // Clear one-time PKCE verifier
-    res.cookies.set({ name: "pkce_v", value: "", ...baseCookie, maxAge: 0 });
+    res.cookies.set("pkce_v", "", { ...base, maxAge: 0 });
 
     return res;
   } catch (e) {
