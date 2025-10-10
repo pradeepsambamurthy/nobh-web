@@ -1,4 +1,3 @@
-// src/middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -9,7 +8,7 @@ function isSafeInternalPath(p?: string | null) {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Allow the auth handshake/static files
+  // Allow the auth handshake & static
   if (
     pathname.startsWith("/auth") ||
     pathname.startsWith("/api/auth") ||
@@ -20,13 +19,13 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // Allow the home page so users can click "Login"
+  // Allow home so users can click "Login"
   if (pathname === "/") return NextResponse.next();
 
-  // Consider logged in if we have auth cookies
-  const hasId = !!req.cookies.get("id_token")?.value;
-  const hasAcc = !!req.cookies.get("access_token")?.value;
-  const loggedIn = hasId || hasAcc;
+  // Consider logged in if access or id token exists
+  const loggedIn =
+    !!req.cookies.get("id_token")?.value ||
+    !!req.cookies.get("access_token")?.value;
 
   if (!loggedIn) {
     const url = req.nextUrl.clone();

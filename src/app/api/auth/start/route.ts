@@ -6,10 +6,14 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function b64url(buf: Buffer | Uint8Array) {
-  return Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return Buffer.from(buf)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const DOMAIN   = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
   const CLIENT   = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
   const REDIRECT = process.env.NEXT_PUBLIC_REDIRECT_URI!;
@@ -33,17 +37,24 @@ export async function GET(_req: NextRequest) {
   authorize.searchParams.set("code_challenge_method", "S256");
   authorize.searchParams.set("state", encodeURIComponent("/residents"));
 
-  // Redirect + set cookie
+  // Redirect + set cookies
   const res = NextResponse.redirect(authorize.toString(), { status: 302 });
 
-  // Host-only cookie (no `domain`), delivered on top-level nav back (Lax)
-  res.cookies.set("pkce_v", verifier, {
+  // Strongest cookie (Chrome/Firefox/Safari friendly across cross-site redirects)
+  // __Host- requires: Secure, Path=/, and NO Domain attribute.
+  const common = {
     httpOnly: true,
-    secure: true,          // required on Vercel (HTTPS)
-    sameSite: "lax",
+    secure: true,
+    sameSite: "none" as const,
     path: "/",
     maxAge: 15 * 60,
-  });
+  };
+
+  // Primary cookie with __Host- prefix
+  res.cookies.set("__Host-pkce_v", verifier, common);
+
+  // Fallback cookie (in case some envs don’t like the prefix)
+  res.cookies.set("pkce_v", verifier, common);
 
   return res;
 }
