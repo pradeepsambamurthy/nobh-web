@@ -2,12 +2,10 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getPkceVerifier, clearPkce } from "@/lib/auth/pkce";
-import { COGNITO_DOMAIN, COGNITO_CLIENT_ID, REDIRECT_URI } from "@/lib/auth/config";
 
-function safeInternalPath(p?: string | null) {
-  return !!p && p.startsWith("/") && !p.startsWith("//");
-}
+const COGNITO_DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
+const CLIENT_ID      = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
+const REDIRECT_URI   = process.env.NEXT_PUBLIC_REDIRECT_URI!;
 
 export default function AuthCallback() {
   const router = useRouter();
@@ -15,54 +13,40 @@ export default function AuthCallback() {
   useEffect(() => {
     const run = async () => {
       const sp = new URLSearchParams(window.location.search);
-      const code = sp.get("code");
+      const code  = sp.get("code");
       const state = sp.get("state");
 
-      console.log("[callback] before read", {
-        url: window.location.href,
-        localHas: !!localStorage.getItem("pkce_code_verifier"),
-        cookieHas: document.cookie.includes("pkce_code_verifier="),
-      });
-
-      if (!code) { alert("No 'code' in URL"); return; }
-
-      let code_verifier: string;
-      try {
-        code_verifier = getPkceVerifier(); // reads ls OR cookie
-      } catch (e) {
-        console.error(e);
-        alert("Missing PKCE verifier. Please click Login again from the home page.");
+      if (!code) {
+        alert("No authorization code in URL.");
         return;
       }
 
-      try {
-        const resp = await fetch("/api/auth/callback", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            code,
-            code_verifier,
-            redirect_uri: REDIRECT_URI,
-            cognito_domain: COGNITO_DOMAIN,
-            client_id: COGNITO_CLIENT_ID,
-          }),
-        });
+      const r = await fetch("/api/auth/callback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          code,
+          redirect_uri: REDIRECT_URI,
+          cognito_domain: COGNITO_DOMAIN,
+          client_id: CLIENT_ID,
+        }),
+      });
 
-        const text = await resp.text();
-        console.log("[callback] token exchange status", resp.status, "body:", text);
-        if (!resp.ok) { alert("Token exchange failed. See console."); return; }
-
-        clearPkce(); // remove ls + cookie
-
-        const decoded = state ? decodeURIComponent(state) : "/residents";
-        router.replace(safeInternalPath(decoded) ? decoded : "/residents");
-      } catch (e) {
-        console.error(e);
-        alert("Unexpected error during login. Check console.");
+      const text = await r.text();
+      if (!r.ok) {
+        console.error("[callback] token exchange failed", r.status, text);
+        alert("Token exchange failed. See console.");
+        return;
       }
+
+      // success -> go where state asked, else /residents
+      const dest = state ? decodeURIComponent(state) : "/residents";
+      router.replace(dest.startsWith("/") && !dest.startsWith("//") ? dest : "/residents");
     };
+
     run();
   }, [router]);
 
-  return <main className="p-6">Signing you in...</main>;
+  return <main className="p-6">Signing you in…</main>;
 }

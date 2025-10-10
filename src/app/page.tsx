@@ -1,10 +1,28 @@
-// src/app/page.tsx
 "use client";
 
 export default function Home() {
-  const handleLogin = () => {
-    // Let the browser navigate (no CORS); the route will set cookie + 302 to Cognito
-    window.location.href = "/api/auth/start";
+  const handleLogin = async () => {
+    const r = await fetch("/api/auth/start", {
+      method: "POST",
+      credentials: "same-origin", // include cookies from same origin
+    });
+
+    if (!r.ok) {
+      console.error("[login] /api/auth/start failed",
+        r.status, await r.text().catch(() => ""));
+      alert("Login init failed. See console.");
+      return;
+    }
+
+    const { authorizeUrl } = await r.json().catch(() => ({} as any));
+    if (!authorizeUrl) {
+      console.error("[login] missing authorizeUrl");
+      alert("Login init failed (no url).");
+      return;
+    }
+
+    // Top-level navigation to Cognito Hosted UI (avoid CORS fetch)
+    window.location.href = authorizeUrl;
   };
 
   return (

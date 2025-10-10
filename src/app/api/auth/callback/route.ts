@@ -1,17 +1,40 @@
-export const runtime = "nodejs";
-
 import { NextResponse } from "next/server";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+// read a single cookie from the raw request headers
+function readCookieFromHeader(req: Request, name: string): string | null {
+  const raw = req.headers.get("cookie") ?? "";
+  const hit = raw.split(";").map(s => s.trim()).find(s => s.startsWith(name + "="));
+  if (!hit) return null;
+  const v = hit.slice(name.length + 1);
+  try { return decodeURIComponent(v); } catch { return v; }
+}
 
 export async function POST(req: Request) {
   try {
-    const { code, code_verifier, redirect_uri, cognito_domain, client_id } = await req.json();
+    const payload = await req.json().catch(() => null);
+    if (!payload) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
 
-    if (!code || !code_verifier || !redirect_uri || !cognito_domain || !client_id) {
-      return NextResponse.json({ error: "missing_fields" }, { status: 400 });
+    const { code, redirect_uri, cognito_domain, client_id } = payload;
+
+    // PKCE verifier set by /api/auth/start
+    const code_verifier = readCookieFromHeader(req, "pkce_v");
+
+    if (!code || !redirect_uri || !cognito_domain || !client_id || !code_verifier) {
+      return NextResponse.json({
+        error: "missing_fields",
+        have: {
+          code: !!code, redirect_uri: !!redirect_uri,
+          cognito_domain: !!cognito_domain, client_id: !!client_id,
+          code_verifier: !!code_verifier,
+        },
+      }, { status: 400 });
     }
 
     const tokenUrl = `${cognito_domain.replace(/\/$/, "")}/oauth2/token`;
-    const form = new URLSearchParams({
+    const body = new URLSearchParams({
       grant_type: "authorization_code",
       client_id,
       code,
@@ -22,42 +45,35 @@ export async function POST(req: Request) {
     const tokenResp = await fetch(tokenUrl, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: form,
+      body,
+      cache: "no-store",
     });
 
-    const json = await tokenResp.json().catch(() => ({}));
+    const json = await tokenResp.json().catch(() => null);
     if (!tokenResp.ok) {
-      console.error("[callback] token exchange failed", tokenResp.status, json);
       return NextResponse.json(
         { error: "token_exchange_failed", status: tokenResp.status, details: json },
         { status: 500 }
       );
     }
 
-    const { id_token, access_token, refresh_token, expires_in } = json;
-    const res = NextResponse.json({ ok: true });
+    const { id_token, access_token, refresh_token, expires_in } = json ?? {};
+    const res = NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 
-    const baseCookie = {
-      httpOnly: true as const,
-      sameSite: "none" as const,
-      secure: true,
-      path: "/",
-      maxAge: Math.max(60, Number(expires_in ?? 3600)),
-    };
+    const secure = !!process.env.VERCEL;
+    const base = { httpOnly: true as const, sameSite: "lax" as const, secure, path: "/" };
+    const max = Math.max(60, Number(expires_in ?? 3600));
 
-    if (id_token) res.cookies.set("id_token", id_token, baseCookie);
-    if (access_token) res.cookies.set("access_token", access_token, baseCookie);
-    if (refresh_token)
-      res.cookies.set("refresh_token", refresh_token, { ...baseCookie, maxAge: 60 * 60 * 24 * 7 });
+    if (id_token)      res.cookies.set("id_token", id_token,           { ...base, maxAge: max });
+    if (access_token)  res.cookies.set("access_token", access_token,   { ...base, maxAge: max });
+    if (refresh_token) res.cookies.set("refresh_token", refresh_token, { ...base, maxAge: 60 * 60 * 24 * 7 });
 
-    res.headers.append(
-      "Set-Cookie",
-      "pkce_v=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=None"
-    );
+    // clear one-time PKCE verifier
+    res.cookies.set("pkce_v", "", { ...base, maxAge: 0 });
 
     return res;
   } catch (e) {
-    console.error("[api/auth/callback] error", e);
+    console.error("[api/auth/callback] unexpected", e);
     return NextResponse.json({ error: "unexpected" }, { status: 500 });
   }
 }

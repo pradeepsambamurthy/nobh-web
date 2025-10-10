@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
+import { randomBytes, createHash } from "node:crypto";
 
-function toBase64Url(bytes: Uint8Array) {
-  // base64url without padding
-  let s = "";
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function b64url(buf: Buffer | Uint8Array) {
+  return Buffer.from(buf)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
 export async function POST() {
@@ -14,22 +19,15 @@ export async function POST() {
   const SCOPES         = "openid email profile";
 
   if (!COGNITO_DOMAIN || !CLIENT_ID || !REDIRECT_URI) {
-    return NextResponse.json({ error: "Missing env vars" }, { status: 500 });
+    return NextResponse.json({ error: "env_missing" }, { status: 500 });
   }
 
-  // 1) PKCE verifier (random) and challenge (SHA-256)
-  const rand = new Uint8Array(32);
-  crypto.getRandomValues(rand);
-  const verifier = toBase64Url(rand);
+  // PKCE verifier + challenge
+  const verifier  = b64url(randomBytes(32));
+  const challenge = b64url(createHash("sha256").update(verifier).digest());
 
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(verifier)
-  );
-  const challenge = toBase64Url(new Uint8Array(digest));
-
-  // 2) Build Cognito authorize URL
-  const url = new URL(`${COGNITO_DOMAIN}/oauth2/authorize`);
+  // Build the Cognito authorize URL (ALL required params present)
+  const url = new URL(`${COGNITO_DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
   url.searchParams.set("client_id", CLIENT_ID);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("redirect_uri", REDIRECT_URI);
@@ -38,16 +36,16 @@ export async function POST() {
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", encodeURIComponent("/residents"));
 
-  // 3) Set verifier cookie on the SAME response you return
-  const res = NextResponse.redirect(url.toString(), { status: 302 });
-  res.cookies.set({
-    name: "pkce_v",
-    value: verifier,
+  // Prepare response JSON
+  const res = NextResponse.json({ authorizeUrl: url.toString() });
+
+  // One-time PKCE cookie (read later in callback)
+  res.cookies.set("pkce_v", verifier, {
     httpOnly: true,
-    sameSite: "lax",      // use "none" only if you absolutely need cross-site
-    secure: true,         // true on Vercel/HTTPS
+    sameSite: "lax",   // allows top-level nav back from Cognito
+    secure: !!process.env.VERCEL, // true on Vercel
     path: "/",
-    maxAge: 300,          // 5 minutes
+    maxAge: 300,       // 5 minutes
   });
 
   return res;
