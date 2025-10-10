@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "app/auth/callback/page.js": {
+      "runtime": "nodejs20.x"
+    }
+  }
+}
