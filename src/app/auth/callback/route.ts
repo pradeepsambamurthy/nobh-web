@@ -5,8 +5,18 @@ import { cookies } from "next/headers";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Helper to safely decode a URI component
 function safeDecode(v: string) {
   try { return decodeURIComponent(v); } catch { return v; }
+}
+
+// Define a proper interface for Cognito’s token response
+interface CognitoTokenResponse {
+  id_token?: string;
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  [key: string]: unknown;
 }
 
 export async function GET(req: NextRequest) {
@@ -24,11 +34,9 @@ export async function GET(req: NextRequest) {
       return new NextResponse("Missing authorization code.", { status: 400 });
     }
 
-    // Read one-time PKCE verifier set by /api/auth/start (or /auth/start)
     const cookieStore = await cookies();
     const code_verifier = cookieStore.get("pkce_v")?.value ?? "";
 
-    // Server-side config
     const COGNITO_DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN?.replace(/\/$/, "");
     const CLIENT_ID      = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
     const REDIRECT_URI   = process.env.NEXT_PUBLIC_REDIRECT_URI;
@@ -48,7 +56,6 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Exchange code for tokens
     const tokenUrl = `${COGNITO_DOMAIN}/oauth2/token`;
     const body = new URLSearchParams({
       grant_type: "authorization_code",
@@ -65,7 +72,9 @@ export async function GET(req: NextRequest) {
       cache: "no-store",
     });
 
-    const json = await tokenResp.json().catch(() => ({} as any));
+    // ✅ Type-safe, no explicit `any`
+    const json: CognitoTokenResponse =
+      (await tokenResp.json().catch(() => ({}))) as CognitoTokenResponse;
 
     if (!tokenResp.ok) {
       console.error("[auth/callback] token exchange failed", tokenResp.status, json);
@@ -75,18 +84,11 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const { id_token, access_token, refresh_token, expires_in } = json as {
-      id_token?: string;
-      access_token?: string;
-      refresh_token?: string;
-      expires_in?: number;
-    };
-
+    const { id_token, access_token, refresh_token, expires_in } = json;
     const nextUrl = state ? safeDecode(state) : "/";
 
     const res = NextResponse.redirect(nextUrl, { status: 302 });
 
-    // Cookie helpers (object overload avoids TS overload issues)
     const baseCookie = {
       httpOnly: true,
       sameSite: "lax" as const,
@@ -95,13 +97,13 @@ export async function GET(req: NextRequest) {
     };
     const max = Math.max(60, Number(expires_in ?? 3600));
 
-    if (typeof id_token === "string" && id_token) {
+    if (id_token) {
       res.cookies.set({ name: "id_token", value: id_token, ...baseCookie, maxAge: max });
     }
-    if (typeof access_token === "string" && access_token) {
+    if (access_token) {
       res.cookies.set({ name: "access_token", value: access_token, ...baseCookie, maxAge: max });
     }
-    if (typeof refresh_token === "string" && refresh_token) {
+    if (refresh_token) {
       res.cookies.set({ name: "refresh_token", value: refresh_token, ...baseCookie, maxAge: 60 * 60 * 24 * 7 });
     }
 
