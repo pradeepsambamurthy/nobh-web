@@ -10,7 +10,8 @@ export async function POST(req: Request) {
     if (!payload) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
 
     const { code, redirect_uri, cognito_domain, client_id } = payload;
-    const code_verifier = cookies().get("pkce_v")?.value ?? null;
+    const cookieStore = await cookies();
+    const code_verifier = cookieStore.get("pkce_v")?.value ?? null;
 
     if (!code || !redirect_uri || !cognito_domain || !client_id || !code_verifier) {
       return NextResponse.json({
