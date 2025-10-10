@@ -39,12 +39,8 @@ export default function CallbackClient(props: {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            code,
-            redirect_uri: REDIRECT_URI,
-            cognito_domain: COGNITO_DOMAIN,
-            client_id: CLIENT_ID,
-          }),
+          body: JSON.stringify({ code }),
+           
         });
 
         if (!resp.ok) {
