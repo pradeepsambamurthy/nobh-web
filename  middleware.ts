@@ -1,4 +1,3 @@
-// src/middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -9,24 +8,21 @@ function isSafeInternalPath(p?: string | null) {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // ✅ Always allow homepage and static assets
+  // Allow the auth handshake & static
   if (
-    pathname === "/" ||
     pathname.startsWith("/auth") ||
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico" ||
-    pathname === "/robots.txt" ||
-    pathname.endsWith(".png") ||
-    pathname.endsWith(".jpg") ||
-    pathname.endsWith(".jpeg") ||
-    pathname.endsWith(".svg") ||
-    pathname.endsWith(".webmanifest")
+    pathname === "/mockServiceWorker.js"
   ) {
     return NextResponse.next();
   }
 
-  // ✅ Protect everything else
+  // Allow home so users can click "Login"
+  if (pathname === "/") return NextResponse.next();
+
+  // Consider logged in if access or id token exists
   const loggedIn =
     !!req.cookies.get("id_token")?.value ||
     !!req.cookies.get("access_token")?.value;
