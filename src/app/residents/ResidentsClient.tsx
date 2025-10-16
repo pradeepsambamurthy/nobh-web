@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import AppShell from "@/components/AppShell";
+import ErrorState from "@/components/ErrorState";
 import {
   Select,
   SelectContent,
@@ -52,9 +53,27 @@ export default function ResidentsClient() {
     return arr;
   }, [data, search, sortBy]);
 
-  if (isLoading) return <main className="p-6">Loading…</main>;
-  if (error) return <main className="p-6 text-red-600">Failed to load residents.</main>;
+  if (isLoading) {
+  return <main className="p-6">Loading…</main>;
+  if (error) return <ErrorState error={error} what="residents" />;
+}
 
+if (error) {
+  // If the API failed because user isn't logged in, silently ignore
+  if (
+    typeof error === "object" &&
+    "message" in error &&
+    (error.message?.includes("401") || error.message?.includes("unauthorized"))
+  ) {
+    return <main className="p-6">Redirecting to login…</main>;
+  }
+
+  return (
+    <main className="p-6 text-red-600">
+      Failed to load residents.
+    </main>
+  );
+}
   return (
     <AppShell>
       <main className="p-6 space-y-6">

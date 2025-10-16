@@ -14,10 +14,11 @@ function isSafeInternalPath(p?: string | null) {
 }
 
 export async function GET(req: NextRequest) {
-  const DOMAIN   = process.env.NEXT_PUBLIC_COGNITO_DOMAIN!;
-  const CLIENT   = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID!;
-  const REDIRECT = process.env.NEXT_PUBLIC_REDIRECT_URI!;
+  const DOMAIN   = process.env.NEXT_PUBLIC_COGNITO_DOMAIN?.trim()!;
+  const CLIENT   = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID?.trim()!;
+  const REDIRECT = process.env.NEXT_PUBLIC_REDIRECT_URI?.trim()!;
   const SCOPES   = "openid email profile";
+
   if (!DOMAIN || !CLIENT || !REDIRECT) {
     return NextResponse.json({ error: "env_missing" }, { status: 500 });
   }
@@ -26,11 +27,12 @@ export async function GET(req: NextRequest) {
   const verifier  = b64url(randomBytes(32));
   const challenge = b64url(createHash("sha256").update(verifier).digest());
 
-  // pick state from return_to (default /residents)
+  // state from return_to (default /residents)
   const url = new URL(req.url);
   const wanted = url.searchParams.get("return_to");
   const state = isSafeInternalPath(wanted) ? wanted! : "/residents";
 
+  // Cognito authorize URL
   const authorize = new URL(`${DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
   authorize.searchParams.set("client_id", CLIENT);
   authorize.searchParams.set("response_type", "code");
@@ -42,9 +44,13 @@ export async function GET(req: NextRequest) {
 
   const res = NextResponse.redirect(authorize.toString(), { status: 302 });
 
-  const common = cookieOptionsForEnv();            // Secure=false on localhost
+  // Cookie that survives the round-trip
+  const common = cookieOptionsForEnv(); // Secure=false on localhost, Secure=true on Vercel
   res.cookies.set("pkce_v", verifier, common);
   if (common.secure) res.cookies.set("__Host-pkce_v", verifier, common);
 
   return res;
 }
+
+// Also support POST (optional, but handy)
+export const POST = GET;

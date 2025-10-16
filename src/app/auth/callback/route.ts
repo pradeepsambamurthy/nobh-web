@@ -5,127 +5,86 @@ import { cookies } from "next/headers";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-interface CognitoTokenResponse {
+type TokenJson = {
   id_token?: string;
   access_token?: string;
   refresh_token?: string;
   expires_in?: number;
-  [k: string]: unknown;
-}
+  error?: string;
+  error_description?: string;
+};
 
 export async function GET(req: NextRequest) {
-  try {
-    const url    = new URL(req.url);
-    const code   = url.searchParams.get("code") ?? "";
-    const error  = url.searchParams.get("error") ?? "";
-    const errDes = url.searchParams.get("error_description") ?? "";
+  const url = new URL(req.url);
+  const code = url.searchParams.get("code") ?? "";
+  const rawState = url.searchParams.get("state") || "/";
 
-    if (error) {
-      return NextResponse.json(
-        { error: "auth_error", detail: decodeURIComponentSafe(errDes) || error },
-        { status: 400 }
-      );
-    }
-    if (!code) {
-      return NextResponse.json({ error: "missing_code" }, { status: 400 });
-    }
+  const DOMAIN   = process.env.NEXT_PUBLIC_COGNITO_DOMAIN?.replace(/\/$/, "");
+  const CLIENT   = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
+  const REDIRECT = process.env.NEXT_PUBLIC_REDIRECT_URI;
 
-    // Read PKCE verifier from cookie (either one)
-    const store = await cookies();
-    const code_verifier =
-      store.get("__Host-pkce_v")?.value ??
-      store.get("pkce_v")?.value ??
-      "";
-
-    const COGNITO_DOMAIN = process.env.NEXT_PUBLIC_COGNITO_DOMAIN?.replace(/\/$/, "");
-    const CLIENT_ID      = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
-    const REDIRECT_URI   = process.env.NEXT_PUBLIC_REDIRECT_URI;
-
-    if (!code_verifier || !COGNITO_DOMAIN || !CLIENT_ID || !REDIRECT_URI) {
-      return NextResponse.json(
-        {
-          error: "missing_fields",
-          have: {
-            domain: !!COGNITO_DOMAIN,
-            client_id: !!CLIENT_ID,
-            redirect_uri: !!REDIRECT_URI,
-            code_verifier: !!code_verifier,
-          },
-          tip: "Ensure pkce_v cookie exists (Secure=false on localhost, SameSite=Lax).",
-        },
-        { status: 400 }
-      );
-    }
-
-    // --- Token exchange ---
-    const tokenUrl = `${COGNITO_DOMAIN}/oauth2/token`;
-    const body = new URLSearchParams({
-      grant_type: "authorization_code",
-      client_id: CLIENT_ID,
-      code,
-      code_verifier,
-      redirect_uri: REDIRECT_URI,
-    });
-
-    const tokenResp = await fetch(tokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-      cache: "no-store",
-    });
-
-    const json = (await tokenResp.json().catch(() => ({}))) as CognitoTokenResponse;
-
-    if (!tokenResp.ok) {
-      return NextResponse.json(
-        { error: "token_exchange_failed", status: tokenResp.status, details: json },
-        { status: tokenResp.status }
-      );
-    }
-
-    const { id_token, access_token, refresh_token, expires_in } = json;
-
-    // --- Safe state handling & absolute redirect URL ---
-    const rawState = url.searchParams.get("state") || "/";
-    let decoded = decodeURIComponentSafe(rawState);
-    const nextPath = decoded.startsWith("/") ? decoded : "/";
-    const dest = new URL(nextPath, url.origin);
-
-    const res = NextResponse.redirect(dest, { status: 302 });
-
-    // Set session cookies
-    const base = {
-      httpOnly: true as const,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax" as const,
-      path: "/",
-    };
-    const max = Math.max(60, Number(expires_in ?? 3600));
-
-    if (id_token)      res.cookies.set("id_token", id_token,           { ...base, maxAge: max });
-    if (access_token)  res.cookies.set("access_token", access_token,   { ...base, maxAge: max });
-    if (refresh_token) res.cookies.set("refresh_token", refresh_token, { ...base, maxAge: 7 * 24 * 60 * 60 });
-
-    // Clear one-time PKCE cookies
-    res.cookies.set("pkce_v", "", { ...base, maxAge: 0 });
-    if (base.secure) res.cookies.set("__Host-pkce_v", "", { ...base, maxAge: 0 });
-
-    // Optional non-HTTP-only helper flag for UI
-    res.cookies.set("logged_in", "true", {
-      httpOnly: false, secure: base.secure, sameSite: "lax", path: "/", maxAge: max
-    });
-
-    return res;
-  } catch (e: any) {
-    console.error("[auth/callback] unexpected", e);
+  if (!DOMAIN || !CLIENT || !REDIRECT) {
     return NextResponse.json(
-      { error: "unexpected", message: e?.message ?? String(e) },
+      { error: "env_missing", have: { DOMAIN: !!DOMAIN, CLIENT: !!CLIENT, REDIRECT: !!REDIRECT } },
       { status: 500 }
     );
   }
-}
+  if (!code) return NextResponse.json({ error: "missing_code" }, { status: 400 });
 
-// ---------- helpers ----------
-function decodeURIComponentSafe(v: string) {
-  try { return decodeURIComponent(v); } catch { return v; }
+  const jar = await cookies();
+  const code_verifier = jar.get("__Host-pkce_v")?.value ?? jar.get("pkce_v")?.value ?? "";
+  if (!code_verifier) {
+    return NextResponse.json(
+      { error: "missing_pkce_cookie", tip: "Begin login from the same domain as callback (nobh-web.vercel.app), not localhost." },
+      { status: 400 }
+    );
+  }
+
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    client_id: CLIENT,
+    code,
+    code_verifier,
+    redirect_uri: REDIRECT,
+  });
+
+  const resp = await fetch(`${DOMAIN}/oauth2/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body,
+    cache: "no-store",
+  });
+
+  const json = (await resp.json().catch(() => ({}))) as TokenJson;
+  if (!resp.ok) {
+    return NextResponse.json(
+      { error: "token_exchange_failed", status: resp.status, details: json },
+      { status: 400 }
+    );
+  }
+
+  const nextPath = rawState.startsWith("/") ? rawState : "/";
+  const dest = new URL(nextPath, url.origin); // ABSOLUTE URL (required on Vercel)
+
+  const base = {
+    httpOnly: true as const,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax" as const,
+    path: "/",
+  };
+  const max = Math.max(60, Number(json.expires_in ?? 3600));
+
+  const res = NextResponse.redirect(dest.toString(), { status: 302 });
+  if (json.id_token)     res.cookies.set("id_token", json.id_token, { ...base, maxAge: max });
+  if (json.access_token) res.cookies.set("access_token", json.access_token, { ...base, maxAge: max });
+  if (json.refresh_token)res.cookies.set("refresh_token", json.refresh_token, { ...base, maxAge: 7 * 24 * 60 * 60 });
+
+  // clear one-time PKCE cookies
+  res.cookies.set("pkce_v", "", { ...base, maxAge: 0 });
+  if (base.secure) res.cookies.set("__Host-pkce_v", "", { ...base, maxAge: 0 });
+
+  // optional UI hint
+  res.cookies.set("logged_in", "true", { httpOnly: false, secure: base.secure, sameSite: "lax", path: "/", maxAge: max });
+
+  return res;
 }
