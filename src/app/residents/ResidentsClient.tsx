@@ -1,4 +1,3 @@
-// src/app/residents/ResidentsClient.tsx
 'use client';
 
 import { useMemo, useState } from "react";
@@ -20,8 +19,13 @@ import {
 type Resident = { id: string; name: string; unit: string; phone?: string };
 
 async function fetchResidents(): Promise<Resident[]> {
-  const res = await axios.get("/api/v1/residents");
+  const res = await axios.get("/api/v1/residents", { withCredentials: true });
   return res.data.data as Resident[];
+}
+
+function toLogin(returnTo = "/residents") {
+  window.location.href =
+    `/api/auth/start?return_to=${encodeURIComponent(returnTo)}`;
 }
 
 export default function ResidentsClient() {
@@ -29,6 +33,8 @@ export default function ResidentsClient() {
     queryKey: ["residents"],
     queryFn: fetchResidents,
     retry: false,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   const [search, setSearch] = useState("");
@@ -54,26 +60,19 @@ export default function ResidentsClient() {
   }, [data, search, sortBy]);
 
   if (isLoading) {
-  return <main className="p-6">Loading…</main>;
-  if (error) return <ErrorState error={error} what="residents" />;
-}
-
-if (error) {
-  // If the API failed because user isn't logged in, silently ignore
-  if (
-    typeof error === "object" &&
-    "message" in error &&
-    (error.message?.includes("401") || error.message?.includes("unauthorized"))
-  ) {
-    return <main className="p-6">Redirecting to login…</main>;
+    return <main className="p-6">Loading…</main>;
   }
 
-  return (
-    <main className="p-6 text-red-600">
-      Failed to load residents.
-    </main>
-  );
-}
+  if (error) {
+    // If unauthorized, bounce to login
+    if (axios.isAxiosError(error) && (error.response?.status === 401)) {
+      toLogin("/residents");
+      return <main className="p-6">Redirecting to login…</main>;
+    }
+
+    return <ErrorState error={error} what="residents" />;
+  }
+
   return (
     <AppShell>
       <main className="p-6 space-y-6">
@@ -89,7 +88,10 @@ if (error) {
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-56"
               />
-              <Select value={sortBy} onValueChange={(v: "name" | "unit") => setSortBy(v)}>
+              <Select
+                value={sortBy}
+                onValueChange={(v: "name" | "unit") => setSortBy(v)}
+              >
                 <SelectTrigger className="w-32">
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
