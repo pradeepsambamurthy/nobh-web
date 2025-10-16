@@ -5,32 +5,33 @@ function isSafeInternalPath(p?: string | null) {
   return !!p && p.startsWith("/") && !p.startsWith("//");
 }
 
+// Paths that should skip auth (static, auth, api, etc.)
+const SKIP = [
+  /^\/_next\//,
+  /^\/favicon\.ico$/,
+  /^\/mockServiceWorker\.js$/,
+  /^\/auth(\/|$)/,        // /auth/* (e.g., /auth/callback)
+  /^\/api\/auth(\/|$)/,   // /api/auth/*
+  /^\/api\/health$/,      // optional health probe
+  /^\/api\/.*$/,          // all API routes (leave server routes to enforce)
+];
+
 export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  const { pathname, search } = req.nextUrl;
 
-  // Allow the auth handshake & static
-  if (
-    pathname.startsWith("/auth") ||
-    pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/_next") ||
-    pathname === "/favicon.ico" ||
-    pathname === "/mockServiceWorker.js"
-  ) {
-    return NextResponse.next();
-  }
-
-  // Allow home so users can click "Login"
+  // allow public paths
   if (pathname === "/") return NextResponse.next();
+  if (SKIP.some(rx => rx.test(pathname))) return NextResponse.next();
 
-  // Consider logged in if access or id token exists
-  const loggedIn =
-    !!req.cookies.get("id_token")?.value ||
-    !!req.cookies.get("access_token")?.value;
+  // consider logged-in if either token cookie exists
+  const loggedIn = Boolean(
+    req.cookies.get("access_token")?.value || req.cookies.get("id_token")?.value
+  );
 
   if (!loggedIn) {
     const url = req.nextUrl.clone();
     url.pathname = "/";
-    const wanted = pathname + (req.nextUrl.search || "");
+    const wanted = pathname + (search || "");
     if (isSafeInternalPath(wanted)) url.searchParams.set("return_to", wanted);
     return NextResponse.redirect(url);
   }
@@ -38,6 +39,7 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
+// Run on everything except assets and already-exempted routes above.
 export const config = {
   matcher: ["/((?!_next|favicon.ico|api/.*|auth/.*|mockServiceWorker.js).*)"],
 };

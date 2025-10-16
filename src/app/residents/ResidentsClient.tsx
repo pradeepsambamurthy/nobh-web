@@ -27,6 +27,7 @@ export default function ResidentsClient() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["residents"],
     queryFn: fetchResidents,
+    retry: false,
   });
 
   const [search, setSearch] = useState("");

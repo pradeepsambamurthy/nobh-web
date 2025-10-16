@@ -1,7 +1,7 @@
 // src/app/api/me/route.ts
 import { NextRequest, NextResponse } from "next/server";
 
-export const runtime = "edge"; // use Web APIs (atob)
+export const runtime = "edge"; // uses atob()
 
 function b64urlDecode(input: string): string {
   let b64 = input.replace(/-/g, "+").replace(/_/g, "/");
@@ -26,15 +26,24 @@ function decodeJwt(jwt: string): IdClaims | null {
   }
 }
 
-export async function GET(req: NextRequest): Promise<NextResponse> {
+export async function GET(req: NextRequest) {
   const id = req.cookies.get("id_token")?.value;
-  if (!id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!id) {
+    return new NextResponse(JSON.stringify({ authenticated: false }), {
+      status: 401,
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  }
 
   const claims = decodeJwt(id);
-  return NextResponse.json({
-    email: claims?.email ?? null,
-    name: claims?.name ?? null,
-    sub: claims?.sub ?? null,
-    groups: claims?.["cognito:groups"] ?? [],
-  });
+  return new NextResponse(
+    JSON.stringify({
+      authenticated: true,
+      email: claims?.email ?? null,
+      name: claims?.name ?? null,
+      sub: claims?.sub ?? null,
+      groups: claims?.["cognito:groups"] ?? [],
+    }),
+    { status: 200, headers: { "content-type": "application/json", "cache-control": "no-store" } }
+  );
 }

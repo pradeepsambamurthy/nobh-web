@@ -1,14 +1,11 @@
-// src/app/providers.tsx
 'use client';
 
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-// import { ReactQueryDevtools } from '@tanstack/react-query-devtools'; // optional
+// import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
-  // create the client once per browser tab
   const [queryClient] = useState(() => new QueryClient());
-
   return (
     <QueryClientProvider client={queryClient}>
       {children}

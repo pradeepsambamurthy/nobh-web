@@ -1,15 +1,21 @@
-"use client";
+// app/page.tsx (server component)
+import Link from "next/link";
 
-export default function Home() {
+export default function Home({ searchParams }: { searchParams: { [k: string]: string | undefined } }) {
+  const returnTo = searchParams?.return_to ?? "/residents";
+  const href = `/api/auth/start?return_to=${encodeURIComponent(returnTo)}`;
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
-      <h1 className="text-3xl font-bold">NoBrokerHood+ Admin</h1>
-      <a
-        href="/api/auth/start"
-        className="rounded-lg bg-blue-600 px-6 py-3 text-white"
-      >
-        Login with AWS Cognito
-      </a>
+    <main className="min-h-screen grid place-items-center p-8">
+      <div className="space-y-4 text-center">
+        <h1 className="text-3xl font-semibold">NoBrokerHood+ Admin</h1>
+        <Link
+          href={href}
+          className="inline-block rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+        >
+          Login with AWS Cognito
+        </Link>
+      </div>
     </main>
   );
 }
