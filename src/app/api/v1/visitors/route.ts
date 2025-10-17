@@ -4,94 +4,152 @@ import { cookies } from "next/headers";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Visitor = {
-  id: string;
-  name: string;
-  code: string;
-  validTill: string;
-  status: "active" | "revoked";
-};
+function errMessage(e: unknown) { return e instanceof Error ? e.message : String(e); }
 
-// HMR-safe in-memory store
-const g = globalThis as unknown as { __VISITORS__?: Visitor[] };
-if (!g.__VISITORS__) {
-  g.__VISITORS__ = [
-    { id: "v1", name: "Electrician", code: "ABCD12",
-      validTill: new Date(Date.now() + 2 * 3600e3).toISOString(), status: "active" },
-    { id: "v2", name: "Courier", code: "PQRS98",
-      validTill: new Date(Date.now() + 1 * 3600e3).toISOString(), status: "active" },
-  ];
-}
-const VISITORS = g.__VISITORS__ as Visitor[];
-
+// ---------- GET: list visitors ----------
 export async function GET(req: Request) {
   try {
+    const apiBase = process.env.API_BASE_URL?.trim();
+    const { origin } = new URL(req.url);
+
     const store = await cookies();
-    const idToken = store.get("id_token")?.value;
-    if (!idToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    const idToken = store.get("id_token")?.value || "";
+    const accessToken = store.get("access_token")?.value || "";
 
-    return NextResponse.json(
-      { data: VISITORS },
-      { headers: { "cache-control": "no-store" } }
-    );
-  } catch (e: any) {
-    console.error("[GET /api/v1/visitors] fatal:", e?.stack || e);
-    return NextResponse.json(
-      { error: "internal_error", message: e?.message ?? String(e) },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(req: Request) {
-  try {
-    const store = await cookies();
-    const idToken = store.get("id_token")?.value;
-    if (!idToken) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-    const url = new URL(req.url);
-    const methodOverride =
-      url.searchParams.get("_method") || (await tryFormField(req, "_method"));
-
-    if (methodOverride === "revoke") {
-      const vid = url.searchParams.get("id") || (await tryFormField(req, "id"));
-      if (!vid) {
-        return NextResponse.json({ error: "bad_request", field: "id" }, { status: 400 });
-      }
-      for (let i = 0; i < VISITORS.length; i++) {
-        if (VISITORS[i].id === vid) {
-          VISITORS[i] = { ...VISITORS[i], status: "revoked" };
-          break;
-        }
-      }
-      return NextResponse.redirect("/visitors");
+    if (!idToken && !accessToken) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    // create pass
-    const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-    VISITORS.unshift({
-      id: "v" + Date.now().toString(36),
-      name: "Guest",
-      code,
-      validTill: new Date(Date.now() + 4 * 3600e3).toISOString(),
-      status: "active",
+    // Stub aligned to your UI shape
+    // UI expects: { id, name, code, validTill, status }
+    if (!apiBase) {
+      return NextResponse.json({
+        data: [
+          {
+            id: "v1",
+            name: "Courier",
+            code: "ABCD12",
+            validTill: new Date(Date.now() + 2 * 3600e3).toISOString(),
+            status: "active",
+          },
+          {
+            id: "v2",
+            name: "Electrician",
+            code: "ZXCV98",
+            validTill: new Date(Date.now() - 1 * 3600e3).toISOString(),
+            status: "revoked",
+          },
+        ] as Array<{ id: string; name: string; code: string; validTill: string; status: "active" | "revoked" }>,
+      });
+    }
+
+    // Safety: avoid recursion if API_BASE_URL points to this app
+    if (apiBase.startsWith(origin)) {
+      return NextResponse.json(
+        { error: "misconfigured_api_base", details: { apiBase, origin } },
+        { status: 500 }
+      );
+    }
+
+    const upstream = await fetch(`${apiBase}/visitors`, {
+      headers: { Authorization: `Bearer ${accessToken || idToken}` },
+      cache: "no-store",
     });
 
-    return NextResponse.redirect("/visitors");
-  } catch (e: any) {
-    console.error("[POST /api/v1/visitors] fatal:", e?.stack || e);
+    if (!upstream.ok) {
+      const text = await upstream.text();
+      return NextResponse.json(
+        { error: "upstream_failed", status: upstream.status, details: text },
+        { status: 502 }
+      );
+    }
+
+    const data = await upstream.json();
+    return NextResponse.json({ data }, { status: 200 });
+  } catch (e: unknown) {
     return NextResponse.json(
-      { error: "internal_error", message: e?.message ?? String(e) },
+      { error: "internal_error", message: errMessage(e) },
       { status: 500 }
     );
   }
 }
 
-async function tryFormField(req: Request, k: string) {
+// ---------- POST: create / revoke ----------
+export async function POST(req: Request) {
   try {
-    const form = await req.formData();
-    return form.get(k)?.toString() ?? null;
-  } catch {
-    return null;
+    const apiBase = process.env.API_BASE_URL?.trim();
+    const url = new URL(req.url);
+    const methodOverride = url.searchParams.get("_method") || ""; // revoke path
+    const id = url.searchParams.get("id") || "";
+
+    const store = await cookies();
+    const idToken = store.get("id_token")?.value || "";
+    const accessToken = store.get("access_token")?.value || "";
+
+    if (!idToken && !accessToken) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+
+    // ---- STUB BEHAVIOR (no API_BASE_URL) ----
+    if (!apiBase) {
+      if (methodOverride === "revoke") {
+        if (!id) return NextResponse.json({ error: "missing_id" }, { status: 400 });
+        // pretend we revoked successfully
+        return NextResponse.json({ ok: true, action: "revoked", id }, { status: 200 });
+      }
+      // create a new stub pass
+      const newPass = {
+        id: `v${Math.random().toString(36).slice(2, 8)}`,
+        name: "New Visitor",
+        code: Math.random().toString(36).slice(2, 8).toUpperCase(),
+        validTill: new Date(Date.now() + 2 * 3600e3).toISOString(),
+        status: "active" as const,
+      };
+      return NextResponse.json({ ok: true, data: newPass }, { status: 201 });
+    }
+
+    // ---- REAL UPSTREAM ----
+    if (!methodOverride) {
+      // Create
+      const upstream = await fetch(`${apiBase}/visitors`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken || idToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ /* include real payload when your UI collects it */ }),
+      });
+      const json = await upstream.json().catch(() => ({}));
+      if (!upstream.ok) {
+        return NextResponse.json(
+          { error: "upstream_failed", status: upstream.status, details: json },
+          { status: 502 }
+        );
+      }
+      return NextResponse.json({ ok: true, data: json }, { status: 201 });
+    }
+
+    if (methodOverride === "revoke") {
+      if (!id) return NextResponse.json({ error: "missing_id" }, { status: 400 });
+      const upstream = await fetch(`${apiBase}/visitors/${encodeURIComponent(id)}/revoke`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken || idToken}` },
+      });
+      const json = await upstream.json().catch(() => ({}));
+      if (!upstream.ok) {
+        return NextResponse.json(
+          { error: "upstream_failed", status: upstream.status, details: json },
+          { status: 502 }
+        );
+      }
+      return NextResponse.json({ ok: true, id }, { status: 200 });
+    }
+
+    return NextResponse.json({ error: "unknown_action" }, { status: 400 });
+  } catch (e: unknown) {
+    return NextResponse.json(
+      { error: "internal_error", message: errMessage(e) },
+      { status: 500 }
+    );
   }
 }

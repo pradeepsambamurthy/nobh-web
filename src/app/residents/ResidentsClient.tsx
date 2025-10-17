@@ -1,8 +1,10 @@
+// src/app/residents/ResidentsClient.tsx
 'use client';
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import axios from "axios";
+import axios from "axios";                     // ✅ add this
+import api from "@/lib/api";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -19,13 +21,13 @@ import {
 type Resident = { id: string; name: string; unit: string; phone?: string };
 
 async function fetchResidents(): Promise<Resident[]> {
-  const res = await axios.get("/api/v1/residents", { withCredentials: true });
+  // withCredentials is fine; same-origin requests send cookies anyway.
+  const res = await api.get("/api/v1/residents", { withCredentials: true });
   return res.data.data as Resident[];
 }
 
 function toLogin(returnTo = "/residents") {
-  window.location.href =
-    `/api/auth/start?return_to=${encodeURIComponent(returnTo)}`;
+  window.location.href = `/api/auth/start?return_to=${encodeURIComponent(returnTo)}`;
 }
 
 export default function ResidentsClient() {
@@ -65,11 +67,10 @@ export default function ResidentsClient() {
 
   if (error) {
     // If unauthorized, bounce to login
-    if (axios.isAxiosError(error) && (error.response?.status === 401)) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
       toLogin("/residents");
       return <main className="p-6">Redirecting to login…</main>;
     }
-
     return <ErrorState error={error} what="residents" />;
   }
 

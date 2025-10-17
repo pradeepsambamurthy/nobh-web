@@ -2,6 +2,8 @@
 
 import AppShell from "@/components/AppShell";
 import { useQuery } from "@tanstack/react-query";
+import axios from "axios";
+import api from "@/lib/api";
 import ErrorState from "@/components/ErrorState";
 
 type Announcement = {
@@ -13,16 +15,21 @@ type Announcement = {
 };
 
 async function fetchAnnouncements(): Promise<Announcement[]> {
-  const r = await fetch("/api/v1/announcements", { cache: "no-store" });
-  if (!r.ok) throw new Error("failed");
-  const j = await r.json();
-  return j.data as Announcement[];
+  const r = await api.get("/api/v1/announcements", { withCredentials: true });
+  return r.data.data as Announcement[];
+}
+
+function toLogin(returnTo = "/announcements") {
+  window.location.href = `/api/auth/start?return_to=${encodeURIComponent(returnTo)}`;
 }
 
 export default function AnnouncementsPage() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["announcements"],
     queryFn: fetchAnnouncements,
+    retry: false,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   return (
@@ -33,24 +40,40 @@ export default function AnnouncementsPage() {
         </div>
 
         {isLoading && <p>Loading…</p>}
-{error && <ErrorState error={error} what="announcements" />}
 
-        <div className="space-y-4">
-          {(data || []).map((a) => (
-            <div key={a.id} className="border rounded p-4">
-              <div className="flex justify-between">
-                <h2 className="font-semibold">{a.title}</h2>
-                <span className="text-xs text-gray-500">
-                  {new Date(a.createdAt).toLocaleString()}
-                </span>
-              </div>
-              <p className="mt-2 text-sm">{a.body}</p>
-              {a.pinned && (
-                <span className="text-xs text-yellow-600 font-semibold">📌 Pinned</span>
+        {error
+          ? (() => {
+              // If unauthorized, bounce to login (preserve return path)
+              if (axios.isAxiosError(error) && error.response?.status === 401) {
+                toLogin("/announcements");
+                return <p>Redirecting to login…</p>;
+              }
+              return <ErrorState error={error} what="announcements" />;
+            })()
+          : (
+            <div className="space-y-4">
+              {(data || []).map((a) => (
+                <div key={a.id} className="border rounded p-4">
+                  <div className="flex justify-between">
+                    <h2 className="font-semibold">{a.title}</h2>
+                    <span className="text-xs text-gray-500">
+                      {new Date(a.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm whitespace-pre-wrap">{a.body}</p>
+                  {a.pinned && (
+                    <span className="mt-2 inline-block text-xs text-yellow-600 font-semibold">
+                      📌 Pinned
+                    </span>
+                  )}
+                </div>
+              ))}
+              {(data?.length ?? 0) === 0 && (
+                <p className="text-muted-foreground">No announcements.</p>
               )}
             </div>
-          ))}
-        </div>
+          )
+        }
       </main>
     </AppShell>
   );
