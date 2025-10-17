@@ -1,15 +1,16 @@
 // src/app/residents/ResidentsClient.tsx
-'use client';
+"use client";
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import axios from "axios";                     // ✅ add this
+import axios from "axios";
 import api from "@/lib/api";
+
+import AppShell from "@/components/AppShell";
+import ErrorState from "@/components/ErrorState";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import AppShell from "@/components/AppShell";
-import ErrorState from "@/components/ErrorState";
 import {
   Select,
   SelectContent,
@@ -18,17 +19,44 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type Resident = { id: string; name: string; unit: string; phone?: string };
+type Resident = {
+  id: string;
+  name: string;
+  unit: string;
+  phone?: string;
+};
+
+type ResidentsResponse = { data: Resident[] };
+
+// ---- data fetching ----------------------------------------------------------
 
 async function fetchResidents(): Promise<Resident[]> {
-  // withCredentials is fine; same-origin requests send cookies anyway.
-  const res = await api.get("/api/v1/residents", { withCredentials: true });
-  return res.data.data as Resident[];
+  const res = await api.get<ResidentsResponse>("/api/v1/residents", {
+    withCredentials: true, // cookies for auth, if any
+  });
+
+  const payload = res.data;
+  if (
+    payload &&
+    typeof payload === "object" &&
+    Array.isArray((payload as ResidentsResponse).data)
+  ) {
+    return (payload as ResidentsResponse).data;
+  }
+
+  // Fallback: never return a non-array to callers that expect an array
+  return [];
 }
 
+// ---- helpers ----------------------------------------------------------------
+
 function toLogin(returnTo = "/residents") {
-  window.location.href = `/api/auth/start?return_to=${encodeURIComponent(returnTo)}`;
+  window.location.href = `/api/auth/start?return_to=${encodeURIComponent(
+    returnTo
+  )}`;
 }
+
+// ---- component --------------------------------------------------------------
 
 export default function ResidentsClient() {
   const { data, isLoading, error } = useQuery({
@@ -42,37 +70,54 @@ export default function ResidentsClient() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "unit">("name");
 
-  const filtered = useMemo(() => {
-    if (!data) return [];
-    const s = search.trim().toLowerCase();
-    const arr = s
-      ? data.filter(
-          (r) =>
-            r.name.toLowerCase().includes(s) ||
-            r.unit.toLowerCase().includes(s)
-        )
-      : data.slice();
+  const filtered: Resident[] = useMemo(() => {
+    const list = Array.isArray(data) ? data : [];
+    const q = search.trim().toLowerCase();
 
-    arr.sort((a, b) =>
+    const base = q
+      ? list.filter(
+          (r) =>
+            r.name.toLowerCase().includes(q) ||
+            r.unit.toLowerCase().includes(q)
+        )
+      : list.slice(); // safe: list is always an array
+
+    base.sort((a, b) =>
       sortBy === "unit"
         ? a.unit.localeCompare(b.unit)
         : a.name.localeCompare(b.name)
     );
-    return arr;
+
+    return base;
   }, [data, search, sortBy]);
 
+  // ---- states ---------------------------------------------------------------
+
   if (isLoading) {
-    return <main className="p-6">Loading…</main>;
+    return (
+      <AppShell>
+        <main className="p-6">Loading…</main>
+      </AppShell>
+    );
   }
 
   if (error) {
-    // If unauthorized, bounce to login
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       toLogin("/residents");
-      return <main className="p-6">Redirecting to login…</main>;
+      return (
+        <AppShell>
+          <main className="p-6">Redirecting to login…</main>
+        </AppShell>
+      );
     }
-    return <ErrorState error={error} what="residents" />;
+    return (
+      <AppShell>
+        <ErrorState error={error} what="residents" />
+      </AppShell>
+    );
   }
+
+  // ---- UI -------------------------------------------------------------------
 
   return (
     <AppShell>
@@ -84,11 +129,12 @@ export default function ResidentsClient() {
           <div className="flex items-center gap-3">
             <div className="flex gap-2">
               <Input
-                placeholder="Search by name or unit..."
+                placeholder="Search by name or unit…"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-56"
               />
+
               <Select
                 value={sortBy}
                 onValueChange={(v: "name" | "unit") => setSortBy(v)}
@@ -123,10 +169,12 @@ export default function ResidentsClient() {
               </div>
             </Card>
           ))}
-          {filtered.length === 0 && (
-            <p className="text-muted-foreground">No residents found.</p>
-          )}
+
         </div>
+
+        {filtered.length === 0 && (
+          <p className="text-muted-foreground">No residents found.</p>
+        )}
       </main>
     </AppShell>
   );
