@@ -29,8 +29,8 @@ export async function GET(req: NextRequest) {
 
   // state from return_to (default /residents)
   const url = new URL(req.url);
-  const wanted = url.searchParams.get("return_to");
-  const state = isSafeInternalPath(wanted) ? wanted! : "/residents";
+  const wanted = url.searchParams.get("return_to") ?? "";
+  const state = isSafeInternalPath(wanted) ? wanted : "/residents";
 
   // Cognito authorize URL
   const authorize = new URL(`${DOMAIN.replace(/\/$/, "")}/oauth2/authorize`);
