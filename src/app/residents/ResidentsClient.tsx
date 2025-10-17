@@ -50,10 +50,15 @@ async function fetchResidents(): Promise<Resident[]> {
 
 // ---- helpers ----------------------------------------------------------------
 
-function toLogin(returnTo = "/residents") {
-  window.location.href = `/api/auth/start?return_to=${encodeURIComponent(
-    returnTo
-  )}`;
+async function toLogin(returnTo = "/residents") {
+  const res = await fetch("/api/auth/start", { method: "POST" });
+  if (!res.ok) {
+    console.error("Failed to start login", await res.text());
+    alert("Could not start login. Please try again.");
+    return;
+  }
+  const { authorizeUrl } = await res.json();
+  window.location.href = authorizeUrl + `&state=${encodeURIComponent(returnTo)}`;
 }
 
 // ---- component --------------------------------------------------------------
