@@ -1,3 +1,4 @@
+// src/app/api/auth/refresh/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
@@ -5,51 +6,49 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  const store = await cookies();
-  const refresh = store.get("refresh_token")?.value;
-
-  const domain = process.env.NEXT_PUBLIC_COGNITO_DOMAIN?.replace(/\/$/, "");
-  const client = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
-
-  if (!refresh || !domain || !client) {
-    return NextResponse.json(
-      { error: "missing_fields", have: { refresh: !!refresh, domain: !!domain, client: !!client } },
-      { status: 400 }
-    );
+  const domain   = process.env.NEXT_PUBLIC_COGNITO_DOMAIN?.replace(/\/$/, "");
+  const clientId = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID?.trim();
+  if (!domain || !clientId) {
+    return NextResponse.json({ error: "missing_env" }, { status: 500 });
   }
 
+  const jar = await cookies();
+  const refresh = jar.get("refresh_token")?.value;
+  if (!refresh) return NextResponse.json({ error: "no_refresh_token" }, { status: 401 });
+
+  const tokenUrl = `${domain}/oauth2/token`;
   const body = new URLSearchParams({
     grant_type: "refresh_token",
-    client_id: client,
+    client_id: clientId,
     refresh_token: refresh,
   });
 
-  const resp = await fetch(`${domain}/oauth2/token`, {
+  const r = await fetch(tokenUrl, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
     cache: "no-store",
   });
 
-  const json = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    return NextResponse.json({ error: "refresh_failed", details: json }, { status: 401 });
+  const payload = await r.json().catch(() => ({} as any));
+  if (!r.ok) {
+    // clear busted access cookie so callers know they’re logged out
+    const res = NextResponse.json({ error: "refresh_failed", details: payload }, { status: 401 });
+    const base = { httpOnly: true as const, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 };
+    res.cookies.set("access_token", "", base);
+    res.cookies.set("id_token", "", base);
+    return res;
   }
 
-  const base = {
-    httpOnly: true as const,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
+  const { access_token, id_token, expires_in = 3600 } = payload as {
+    access_token: string; id_token?: string; expires_in?: number
   };
 
-  const max = Math.max(60, Number(json.expires_in ?? 3600));
-  const res = NextResponse.json({ ok: true });
+  const secure = process.env.NODE_ENV === "production";
+  const base = { httpOnly: true as const, sameSite: "lax" as const, secure, path: "/" };
 
-  if (json.access_token) res.cookies.set("access_token", json.access_token, { ...base, maxAge: max });
-  if (json.id_token)     res.cookies.set("id_token", json.id_token,       { ...base, maxAge: max });
-  // refresh_token may be rotated; set if present
-  if (json.refresh_token) res.cookies.set("refresh_token", json.refresh_token, { ...base, maxAge: 7 * 24 * 3600 });
+  if (access_token) jar.set("access_token", access_token, { ...base, maxAge: expires_in });
+  if (id_token)     jar.set("id_token",     id_token,     { ...base, maxAge: expires_in });
 
-  return res;
+  return NextResponse.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
 }
