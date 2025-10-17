@@ -1,25 +1,30 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+// middleware.ts (nobh-web)
+import { NextResponse, NextRequest } from "next/server";
 
 function isSafeInternalPath(p?: string | null) {
   return !!p && p.startsWith("/") && !p.startsWith("//");
 }
 
 export function middleware(req: NextRequest) {
-  const { pathname, searchParams } = req.nextUrl;
+  const { pathname } = req.nextUrl;
 
-  // Allow the landing page without auth
-  if (pathname === "/") return NextResponse.next();
+  // Only protect app pages (adjust list as you add sections)
+  const protectedPaths = [/^\/residents($|\/)/, /^\/visitors($|\/)/, /^\/announcements($|\/)/];
+  const isProtected = protectedPaths.some((re) => re.test(pathname));
+  if (!isProtected) return NextResponse.next();
 
-  const loggedIn =
+  const hasAuth =
     !!req.cookies.get("access_token")?.value ||
     !!req.cookies.get("id_token")?.value;
 
-  if (!loggedIn) {
+  if (!hasAuth) {
+    // Kick off PKCE flow (GET handler in /api/auth/start sets code_verifier & redirects to Cognito)
     const url = req.nextUrl.clone();
-    url.pathname = "/";
+    url.pathname = "/api/auth/start";
+
     const wanted = `${pathname}${req.nextUrl.search || ""}`;
-    if (isSafeInternalPath(wanted)) url.searchParams.set("return_to", wanted);
+    if (isSafeInternalPath(wanted)) url.searchParams.set("state", wanted);
+
     return NextResponse.redirect(url);
   }
 
@@ -27,6 +32,6 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  // Don't run on assets, API, or auth
-  matcher: ["/((?!_next|favicon.ico|api/.*|auth/.*|mockServiceWorker.js).*)"],
+  // Run only on app routes; skip Next assets, API, auth endpoints, etc.
+  matcher: ["/((?!_next|favicon.ico|api/auth/.*|api/health|api/v1/.*|auth/.*|mockServiceWorker.js).*)"],
 };

@@ -51,14 +51,22 @@ async function fetchResidents(): Promise<Resident[]> {
 // ---- helpers ----------------------------------------------------------------
 
 async function toLogin(returnTo = "/residents") {
-  const res = await fetch("/api/auth/start", { method: "POST" });
+  const res = await fetch("/api/auth/start", {
+    method: "POST",
+    cache: "no-store",
+    credentials: "include", // ensure Set-Cookie is honored
+    headers: { "content-type": "application/json" },
+  });
+
   if (!res.ok) {
     console.error("Failed to start login", await res.text());
     alert("Could not start login. Please try again.");
     return;
   }
+
   const { authorizeUrl } = await res.json();
-  window.location.href = authorizeUrl + `&state=${encodeURIComponent(returnTo)}`;
+  // keep your state so we can bounce back after callback
+  window.location.href = `${authorizeUrl}&state=${encodeURIComponent(returnTo)}`;
 }
 
 // ---- component --------------------------------------------------------------
