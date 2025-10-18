@@ -4,58 +4,45 @@ import { cookies } from "next/headers";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function errMessage(e: unknown) { return e instanceof Error ? e.message : String(e); }
+function msg(e: unknown) { return e instanceof Error ? e.message : String(e); }
 
 export async function GET(req: Request) {
   try {
-    console.log("[residents] API_BASE_URL =", process.env.API_BASE_URL);
-    const apiBase = process.env.API_BASE_URL?.trim();
-    const { origin } = new URL(req.url);
+    const apiBase = process.env.API_BASE_URL?.trim(); // e.g. https://nobh-api.vercel.app/api/v1
+    if (!apiBase) {
+      return NextResponse.json({ error: "missing_api_base" }, { status: 500 });
+    }
 
-    const store = await cookies();
-    const idToken = store.get("id_token")?.value || "";
-    const accessToken = store.get("access_token")?.value || "";
+    const jar = await cookies();
+    const idToken = jar.get("id_token")?.value || "";
+    const accessToken = jar.get("access_token")?.value || "";
+    const token = accessToken || idToken;
 
-    if (!idToken && !accessToken) {
+    if (!token) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
 
-    if (!apiBase) {
-      return NextResponse.json({
-        data: [
-          { id: "r1", name: "John Doe",  unit: "A-101", phone: "+1 555-1111" },
-          { id: "r2", name: "Jane Smith", unit: "B-203", phone: "+1 555-2222" },
-          { id: "r3", name: "Ravi Kumar", unit: "C-307", phone: "+1 555-3333" },
-        ],
-      });
-    }
-
-    if (apiBase.startsWith(origin)) {
-      return NextResponse.json(
-        { error: "misconfigured_api_base", details: { apiBase, origin } },
-        { status: 500 }
-      );
-    }
-
     const upstream = await fetch(`${apiBase}/residents`, {
-      headers: { Authorization: `Bearer ${accessToken || idToken}` },
+      headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
 
+    // Surface 401s (and other errors) as-is instead of masking them
     if (!upstream.ok) {
-      const text = await upstream.text();
+      const details = await upstream.text().catch(() => "");
       return NextResponse.json(
-        { error: "upstream_failed", status: upstream.status, details: text },
-        { status: 502 }
+        { error: "upstream_failed", status: upstream.status, details },
+        { status: upstream.status }
       );
     }
 
     const data = await upstream.json();
-    return NextResponse.json({ data }, { status: 200 });
-  } catch (e: unknown) {
-    console.error("[GET /api/v1/residents]", e);
+    // upstream returns { data: [...] } — forward it directly
+    return NextResponse.json(data, { status: 200 });
+  } catch (e) {
+    console.error("[web /api/v1/residents]", e);
     return NextResponse.json(
-      { error: "internal_error", message: errMessage(e) },
+      { error: "internal_error", message: msg(e) },
       { status: 500 }
     );
   }

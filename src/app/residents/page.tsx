@@ -1,61 +1,55 @@
-export default async function ResidentsPage() {
-  try {
-    const res = await fetch(`${process.env.API_BASE_URL}/residents`, {
-      cache: "no-store",
-    });
+"use client";
 
-    if (!res.ok) {
-      return (
-        <main className="p-6 text-red-600">
-          Failed to load residents. Status: {res.status}
-        </main>
-      );
+import { useEffect, useState } from "react";
+
+export default function ResidentsPage() {
+  const [residents, setResidents] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchResidents() {
+      try {
+        const res = await fetch("/api/v1/residents", {
+          credentials: "include",
+        });
+
+        if (res.status === 401) {
+          console.warn("Unauthorized → redirecting to Cognito login");
+          // Redirect to start auth
+          window.location.href = "/api/auth/start?returnTo=/residents";
+          return;
+        }
+
+        if (!res.ok) throw new Error(`Status ${res.status}`);
+
+        const { data } = await res.json();
+        setResidents(data || []);
+      } catch (err: any) {
+        setError(err.message || "Failed to load residents");
+      }
     }
 
-    const json = await res.json();
+    fetchResidents();
+  }, []);
 
-    // 🧠 Deep inspection — log what we got
-    console.log("API response:", json);
-
-    // ✅ Guarantee an array, no matter what shape the response is
-    const residents =
-      (json &&
-        typeof json === "object" &&
-        Array.isArray(json.data) &&
-        json.data) ||
-      (Array.isArray(json) && json) ||
-      [];
-
-    // 👇 Debug fallback (optional for local testing)
-    if (!Array.isArray(residents)) {
-      console.error("Residents is not an array:", residents);
-    }
-
+  if (error) {
     return (
-      <main className="p-6">
-        <h1 className="text-2xl font-bold mb-4">Residents</h1>
-
-        {residents.length === 0 ? (
-          <p>No residents found.</p>
-        ) : (
-          <ul>
-            {Array.isArray(residents) &&
-              residents.map((r, i) => (
-                <li key={r?.id || i} className="border-b py-2">
-                  <strong>{r?.name ?? "Unknown"}</strong> —{" "}
-                  {r?.unit ?? "N/A"} — {r?.phone ?? ""}
-                </li>
-              ))}
-          </ul>
-        )}
-      </main>
-    );
-  } catch (err) {
-    console.error("[ResidentsPage] error:", err);
-    return (
-      <main className="p-6 text-red-600">
-        Unexpected error: {String(err)}
-      </main>
+      <div style={{ color: "red" }}>
+        Failed to load residents. Error: {error}
+      </div>
     );
   }
+
+  return (
+    <main className="p-8">
+      <h1 className="text-xl font-bold mb-4">Residents</h1>
+      <ul>
+        {residents.map((r) => (
+          <li key={r.id}>
+            <b>{r.name}</b> — {r.unit} — {r.phone}
+          </li>
+        ))}
+      </ul>
+    </main>
+  );
 }
