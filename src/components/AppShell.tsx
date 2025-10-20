@@ -1,4 +1,3 @@
-// src/components/AppShell.tsx
 "use client";
 
 import Link from "next/link";
@@ -6,11 +5,12 @@ import { usePathname } from "next/navigation";
 import { useMe } from "@/hooks/useMe";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  const pathname = usePathname() || "/";
   const { data, isLoading, error } = useMe();
 
   const NavLink = ({ href, label }: { href: string; label: string }) => {
-    const active = pathname === href;
+    // active for exact route or any sub-route
+    const active = pathname === href || pathname.startsWith(href + "/");
     return (
       <Link
         href={href}
@@ -36,21 +36,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="border-t pt-3 text-sm text-muted-foreground">
           {isLoading && <p>Checking login…</p>}
-
           {!isLoading && error && <p className="text-red-600">Failed to check session.</p>}
 
           {!isLoading && data?.authenticated && (
             <div className="flex flex-col gap-1">
-              <span className="font-medium">{data.name || data.email}</span>
+              <span className="font-medium">{data.name || data.email || "Signed in"}</span>
+
+              {/* If your /api/auth/logout is GET, keep <a>. If it's POST, use a form. */}
               <a href="/api/auth/logout" className="underline text-red-600">
                 Sign out
               </a>
+              {/*
+              <form action="/api/auth/logout" method="post">
+                <button className="underline text-red-600">Sign out</button>
+              </form>
+              */}
             </div>
           )}
 
           {!isLoading && !data?.authenticated && (
             <a
-              href={`/api/auth/start?return_to=${encodeURIComponent(pathname || "/residents")}`}
+              href={`/api/auth/start?return_to=${encodeURIComponent(pathname)}`}
               className="underline text-blue-600"
             >
               Sign in

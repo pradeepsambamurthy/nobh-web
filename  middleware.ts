@@ -6,10 +6,16 @@ function isSafeInternalPath(p?: string | null) {
 }
 
 export function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  const { pathname, search } = req.nextUrl;
 
-  // Only protect app pages (adjust list as you add sections)
-  const protectedPaths = [/^\/residents($|\/)/, /^\/visitors($|\/)/, /^\/announcements($|\/)/];
+  // Any sections that require login:
+  const protectedPaths = [
+    /^\/residents(?:$|\/)/,
+    /^\/visitors(?:$|\/)/,
+    /^\/logs(?:$|\/)/,
+    /^\/announcements(?:$|\/)/,
+  ];
+
   const isProtected = protectedPaths.some((re) => re.test(pathname));
   if (!isProtected) return NextResponse.next();
 
@@ -18,12 +24,14 @@ export function middleware(req: NextRequest) {
     !!req.cookies.get("id_token")?.value;
 
   if (!hasAuth) {
-    // Kick off PKCE flow (GET handler in /api/auth/start sets code_verifier & redirects to Cognito)
+    // Kick off PKCE flow. /api/auth/start expects ?return_to=...
     const url = req.nextUrl.clone();
     url.pathname = "/api/auth/start";
 
-    const wanted = `${pathname}${req.nextUrl.search || ""}`;
-    if (isSafeInternalPath(wanted)) url.searchParams.set("state", wanted);
+    const wanted = `${pathname}${search || ""}`;
+    if (isSafeInternalPath(wanted)) {
+      url.searchParams.set("return_to", wanted); 
+    }
 
     return NextResponse.redirect(url);
   }
@@ -31,7 +39,19 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
+// Run on app routes only; skip assets & auth/api endpoints
 export const config = {
-  // Run only on app routes; skip Next assets, API, auth endpoints, etc.
-  matcher: ["/((?!_next|favicon.ico|api/auth/.*|api/health|api/v1/.*|auth/.*|mockServiceWorker.js).*)"],
+  matcher: [
+    // exclude Next assets
+    "/((?!_next/|favicon.ico"
+      // exclude auth endpoints
+      + "|api/auth/.*"
+      // exclude your API routes
+      + "|api/health"
+      + "|api/v1/.*"
+      + "|api/me"            // ✅ exclude /api/me so it isn't intercepted
+      // optional: exclude callback pages if you have /auth/...
+      + "|auth/.*"
+      + "|mockServiceWorker.js).*)",
+  ],
 };

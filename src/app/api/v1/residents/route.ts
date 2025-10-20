@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   try {
     const apiBase = process.env.API_BASE_URL?.trim(); // e.g. https://nobh-api.vercel.app/api/v1
     if (!apiBase) {
-      return NextResponse.json({ error: "missing_api_base" }, { status: 500 });
+      return NextResponse.json({ error: "missing_api_base", details: "API_BASE_URL is not set" }, { status: 500 });
     }
 
     const jar = await cookies();
