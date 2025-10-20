@@ -1,4 +1,4 @@
-// middleware.ts (nobh-web)
+// middleware.ts
 import { NextResponse, NextRequest } from "next/server";
 
 function isSafeInternalPath(p?: string | null) {
@@ -8,7 +8,7 @@ function isSafeInternalPath(p?: string | null) {
 export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
-  // Any sections that require login:
+  // Protect these sections
   const protectedPaths = [
     /^\/residents(?:$|\/)/,
     /^\/visitors(?:$|\/)/,
@@ -24,13 +24,13 @@ export function middleware(req: NextRequest) {
     !!req.cookies.get("id_token")?.value;
 
   if (!hasAuth) {
-    // Kick off PKCE flow. /api/auth/start expects ?return_to=...
+    // Start PKCE — send the *state* param so we come back to this page
     const url = req.nextUrl.clone();
     url.pathname = "/api/auth/start";
 
     const wanted = `${pathname}${search || ""}`;
     if (isSafeInternalPath(wanted)) {
-      url.searchParams.set("return_to", wanted); 
+      url.searchParams.set("state", wanted); // 👈 standardize on `state`
     }
 
     return NextResponse.redirect(url);
@@ -39,19 +39,10 @@ export function middleware(req: NextRequest) {
   return NextResponse.next();
 }
 
-// Run on app routes only; skip assets & auth/api endpoints
+// Only run on app routes; skip assets & API/auth endpoints
 export const config = {
   matcher: [
-    // exclude Next assets
-    "/((?!_next/|favicon.ico"
-      // exclude auth endpoints
-      + "|api/auth/.*"
-      // exclude your API routes
-      + "|api/health"
-      + "|api/v1/.*"
-      + "|api/me"            // ✅ exclude /api/me so it isn't intercepted
-      // optional: exclude callback pages if you have /auth/...
-      + "|auth/.*"
-      + "|mockServiceWorker.js).*)",
+   
+    "/((?!_next/|favicon.ico|api/(auth|health|v1|me).*|auth/.*|mockServiceWorker.js).*)",
   ],
 };
