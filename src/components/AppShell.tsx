@@ -9,7 +9,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const { data, isLoading, error } = useMe();
 
   const NavLink = ({ href, label }: { href: string; label: string }) => {
-    // active for exact route or any sub-route
     const active = pathname === href || pathname.startsWith(href + "/");
     return (
       <Link
@@ -41,16 +40,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {!isLoading && data?.authenticated && (
             <div className="flex flex-col gap-1">
               <span className="font-medium">{data.name || data.email || "Signed in"}</span>
-
-              {/* If your /api/auth/logout is GET, keep <a>. If it's POST, use a form. */}
-              <a href="/api/auth/logout" className="underline text-red-600">
-                Sign out
-              </a>
-              {/*
-              <form action="/api/auth/logout" method="post">
-                <button className="underline text-red-600">Sign out</button>
-              </form>
-              */}
+              <a href="/api/auth/logout" className="underline text-red-600">Sign out</a>
             </div>
           )}
 

@@ -19,16 +19,15 @@ export default function VisitorsPage() {
 
   async function load() {
     try {
-      const res = await fetch("/api/v1/visitors", { credentials: "include", cache: "no-store" });
-      if (res.status === 401) {
-        window.location.href = `/api/auth/start?state=${encodeURIComponent("/visitors")}`;
+      const r = await fetch("/api/v1/visitors", { credentials: "include", cache: "no-store" });
+      if (r.status === 401) {
+        window.location.href = `/api/auth/start?return_to=${encodeURIComponent("/visitors")}`;
         return;
       }
-      if (!res.ok) throw new Error(`visitors_failed_${res.status}`);
-      const json = await res.json();
-      const arr = Array.isArray(json?.data) ? (json.data as Visitor[]) : [];
-      setItems(arr);
-    } catch (e:any) {
+      if (!r.ok) throw new Error(`visitors_failed_${r.status}`);
+      const json = await r.json();
+      setItems(Array.isArray(json?.data) ? json.data : []);
+    } catch (e: any) {
       setErr(e?.message ?? "failed");
     } finally {
       setLoading(false);
