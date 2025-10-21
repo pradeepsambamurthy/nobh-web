@@ -5,46 +5,64 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  const domain   = process.env.NEXT_PUBLIC_COGNITO_DOMAIN?.replace(/\/$/, "");
-  const clientId = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID?.trim();
-  if (!domain || !clientId) {
-    return NextResponse.json({ ok:false, error:"missing_env" }, { status: 500 });
+  try {
+    // ⬇️ NOTE: await cookies() here
+    const jar = await cookies();
+    const refreshToken = jar.get("refresh_token")?.value;
+
+    const domain   = process.env.NEXT_PUBLIC_COGNITO_DOMAIN?.trim();
+    const clientId = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID?.trim();
+
+    if (!domain || !clientId || !refreshToken) {
+      return NextResponse.json(
+        { refreshed: false, reason: "missing_env_or_token" },
+        { status: 401, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    const tokenUrl = `${domain.replace(/\/$/, "")}/oauth2/token`;
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: clientId,
+      refresh_token: refreshToken,
+    });
+
+    const res = await fetch(tokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      return NextResponse.json(
+        { refreshed: false, status: res.status },
+        { status: 401, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    const tokens: any = await res.json();
+
+    const r = NextResponse.json(
+      { refreshed: true },
+      { headers: { "Cache-Control": "no-store" } }
+    );
+
+    // Update cookies if present
+    const base = { path: "/", httpOnly: true as const, sameSite: "lax" as const, secure: true as const };
+
+    if (tokens.id_token)     r.cookies.set("id_token",     tokens.id_token,     base);
+    if (tokens.access_token) r.cookies.set("access_token", tokens.access_token, base);
+    if (tokens.refresh_token) {
+      r.cookies.set("refresh_token", tokens.refresh_token, { ...base, maxAge: 30 * 24 * 3600 }); // 30d
+    }
+
+    return r;
+  } catch (err) {
+    console.error("[auth/refresh]", err);
+    return NextResponse.json(
+      { refreshed: false, error: String(err) },
+      { status: 500, headers: { "Cache-Control": "no-store" } }
+    );
   }
-
-  const jar = await cookies();
-  const refresh = jar.get("refresh_token")?.value;
-  if (!refresh) {
-    return NextResponse.json({ ok:false, error:"no_refresh_token" }, { status: 401 });
-  }
-
-  const tokenUrl = `${domain}/oauth2/token`;
-  const body = new URLSearchParams({
-    grant_type: "refresh_token",
-    client_id: clientId,
-    refresh_token: refresh,
-  });
-
-  const r = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
-    cache: "no-store",
-  });
-
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) {
-    return NextResponse.json({ ok:false, error:"refresh_failed", details: data }, { status: 401 });
-  }
-
-  const { access_token, id_token, expires_in = 3600 } = data as {
-    access_token: string; id_token?: string; expires_in?: number;
-  };
-
-  const secure = process.env.NODE_ENV === "production";
-  const base = { httpOnly: true as const, sameSite: "lax" as const, secure, path:"/" };
-
-  if (access_token) jar.set("access_token", access_token, { ...base, maxAge: expires_in });
-  if (id_token)     jar.set("id_token",     id_token,     { ...base, maxAge: expires_in });
-
-  return NextResponse.json({ ok: true });
 }

@@ -1,57 +1,48 @@
 // src/lib/api.ts
-import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from "axios";
+export type Json = Record<string, unknown> | unknown[] | null;
 
-const api = axios.create({
-  // same-origin API calls like /api/v1/...
-  withCredentials: true,
-});
+export async function apiFetch<T = unknown>(
+  path: string,
+  opts: RequestInit & { expect?: "array" | "object"; returnTo?: string } = {}
+): Promise<T> {
+  const {
+    expect = "array",
+    returnTo = typeof window !== "undefined" ? window.location.pathname : "/",
+    ...init
+  } = opts;
 
-let refreshPromise: Promise<Response> | null = null;
+  const res = await fetch(path, {
+    credentials: "include",
+    cache: "no-store",
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(init.headers || {}),
+    },
+  });
 
-async function runRefreshOnce() {
-  if (!refreshPromise) {
-    refreshPromise = fetch("/api/auth/refresh", { method: "POST", cache: "no-store" })
-      .finally(() => {
-        // release after it settles so subsequent 401s can refresh again later
-        refreshPromise = null;
-      });
-  }
-  return refreshPromise;
-}
-
-function redirectToLogin() {
-  const here = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/";
-  window.location.href = `/api/auth/start?return_to=${encodeURIComponent(here)}`;
-}
-
-api.interceptors.response.use(
-  (res: AxiosResponse) => res,
-  async (error: AxiosError) => {
-    const status = error.response?.status;
-    const original = (error.config || {}) as AxiosRequestConfig & { __retried?: boolean };
-
-    // If unauthorized, try a single refresh once
-    if (status === 401 && !original.__retried) {
-      original.__retried = true;
-
-      try {
-        const r = await runRefreshOnce();
-
-        // refresh ok? retry original
-        if (r.ok) return api(original);
-
-        // refresh failed —> go to login
-        redirectToLogin();
-        // throw to stop further handling
-        return Promise.reject(error);
-      } catch {
-        redirectToLogin();
-        return Promise.reject(error);
-      }
+  // Handle 401 (unauthorized)
+  if (res.status === 401) {
+    if (typeof window !== "undefined") {
+      window.location.href = `/api/auth/start?state=${encodeURIComponent(returnTo)}`;
     }
-
-    return Promise.reject(error);
+    // prevent further .then/.map crashes after redirect
+    return new Promise<T>(() => {});
   }
-);
 
-export default api;
+  // Handle non-OK responses
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`api_error_${res.status}:${text.slice(0, 200)}`);
+  }
+
+  // Parse JSON safely
+  const json = (await res.json().catch(() => null)) as { data?: unknown } | null;
+  const payload = (json && "data" in json ? (json.data as unknown) : json) as unknown;
+
+  // Normalize: always return array or object as requested
+  if (expect === "array") {
+    return (Array.isArray(payload) ? payload : []) as T;
+  }
+  return (payload && typeof payload === "object" ? payload : ({} as T)) as T;
+}
