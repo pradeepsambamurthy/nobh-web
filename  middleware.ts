@@ -45,5 +45,6 @@ export const config = {
     "/visitors/:path*",
     "/logs/:path*",
     "/announcements/:path*",
+    /^\/messages(?:$|\/)/,
   ],
 };

@@ -31,6 +31,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <NavLink href="/visitors" label="Visitor Passes" />
           <NavLink href="/announcements" label="Announcements" />
           <NavLink href="/logs" label="Entry Logs" />
+          <NavLink href="/messages" label="Messenger" />
         </nav>
 
         <div className="border-t pt-3 text-sm text-muted-foreground">

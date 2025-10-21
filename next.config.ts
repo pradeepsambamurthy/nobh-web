@@ -18,8 +18,7 @@ const nextConfig: NextConfig = {
               "img-src 'self' data:",
               "style-src 'self' 'unsafe-inline'",
               "script-src 'self' 'unsafe-inline'",
-              // 👇 exact hosts; add others if you later use them
-              "connect-src 'self' https://nobh-api.vercel.app https://cognito-idp.us-east-2.amazonaws.com https://us-east-2opzd66exz.auth.us-east-2.amazoncognito.com",
+              "connect-src 'self' https://*.amazoncognito.com https://cognito-idp.*.amazonaws.com https://nobh-api.vercel.app https://*.pusher.com wss://*.pusher.com",
               "frame-ancestors 'none'",
             ].join("; "),
           },
