@@ -1,45 +1,84 @@
+// src/app/api/v1/visitors/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function errMessage(e: unknown) { return e instanceof Error ? e.message : String(e); }
+// ---------- helpers ----------
+function noStore(init: ResponseInit = {}) {
+  return {
+    ...init,
+    headers: { ...(init.headers || {}), "cache-control": "no-store" },
+  };
+}
+function errMessage(e: unknown) {
+  return e instanceof Error ? e.message : String(e);
+}
 
-type Visitor = { id: string; name: string; code: string; validTill: string; status: "active"|"revoked" };
+export type Visitor = {
+  id: string;
+  name: string;
+  code: string;
+  validTill: string;
+  status: "active" | "revoked";
+};
 
 function normalizeVisitors(input: any): Visitor[] {
-  const arr = Array.isArray(input) ? input : Array.isArray(input?.data) ? input.data : [];
+  const arr = Array.isArray(input)
+    ? input
+    : Array.isArray(input?.data)
+    ? input.data
+    : [];
   return arr.map((v: any) => ({
     id: String(v.id ?? v._id ?? crypto.randomUUID()),
     name: String(v.name ?? "Visitor"),
     code: String(v.code ?? v.passCode ?? "CODE"),
-    validTill: new Date(v.validTill ?? v.valid_until ?? Date.now() + 2*3600e3).toISOString(),
+    validTill: new Date(
+      v.validTill ?? v.valid_until ?? Date.now() + 2 * 3600e3
+    ).toISOString(),
     status: (v?.status === "revoked" ? "revoked" : "active") as Visitor["status"],
   }));
 }
 
-// ---------- GET ----------
+// ---------- GET /api/v1/visitors ----------
 export async function GET(req: Request) {
   try {
     const apiBase = process.env.API_BASE_URL?.trim();
     const { origin } = new URL(req.url);
 
     const jar = await cookies();
-    const token = jar.get("access_token")?.value || jar.get("id_token")?.value || "";
-    if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    const token =
+      jar.get("access_token")?.value || jar.get("id_token")?.value || "";
+    if (!token) return NextResponse.json({ error: "unauthorized" }, noStore({ status: 401 }));
 
-    // STUB
+    // STUB: when API_BASE_URL is not configured, serve example data
     if (!apiBase) {
       const data = normalizeVisitors([
-        { id: "v1", name: "Courier",     code: "ABCD12", validTill: new Date(Date.now()+2*3600e3).toISOString(), status: "active" },
-        { id: "v2", name: "Electrician", code: "ZXCV98", validTill: new Date(Date.now()-1*3600e3).toISOString(), status: "revoked" },
+        {
+          id: "v1",
+          name: "Courier",
+          code: "ABCD12",
+          validTill: new Date(Date.now() + 2 * 3600e3).toISOString(),
+          status: "active",
+        },
+        {
+          id: "v2",
+          name: "Electrician",
+          code: "ZXCV98",
+          validTill: new Date(Date.now() - 1 * 3600e3).toISOString(),
+          status: "revoked",
+        },
       ]);
-      return NextResponse.json({ data }, { status: 200 });
+      return NextResponse.json({ data }, noStore({ status: 200 }));
     }
 
+    // Avoid infinite loop if API_BASE_URL points to this same app
     if (apiBase.startsWith(origin)) {
-      return NextResponse.json({ error: "misconfigured_api_base", details: { apiBase, origin } }, { status: 500 });
+      return NextResponse.json(
+        { error: "misconfigured_api_base", details: { apiBase, origin } },
+        noStore({ status: 500 })
+      );
     }
 
     const upstream = await fetch(`${apiBase}/visitors`, {
@@ -49,17 +88,25 @@ export async function GET(req: Request) {
 
     const raw = await upstream.json().catch(() => ({}));
     if (!upstream.ok) {
-      return NextResponse.json({ error: "upstream_failed", status: upstream.status, details: raw }, { status: 502 });
+      return NextResponse.json(
+        { error: "upstream_failed", status: upstream.status, details: raw },
+        noStore({ status: 502 })
+      );
     }
 
     const data = normalizeVisitors(raw);
-    return NextResponse.json({ data }, { status: 200 });
+    return NextResponse.json({ data }, noStore({ status: 200 }));
   } catch (e) {
-    return NextResponse.json({ error: "internal_error", message: errMessage(e) }, { status: 500 });
+    return NextResponse.json(
+      { error: "internal_error", message: errMessage(e) },
+      noStore({ status: 500 })
+    );
   }
 }
 
-// ---------- POST (create / revoke via ?_method=) ----------
+// ---------- POST /api/v1/visitors ----------
+//  - Create pass:         POST /api/v1/visitors
+//  - Revoke existing:     POST /api/v1/visitors?_method=revoke&id=<id>
 export async function POST(req: Request) {
   try {
     const apiBase = process.env.API_BASE_URL?.trim();
@@ -68,15 +115,17 @@ export async function POST(req: Request) {
     const id = url.searchParams.get("id") || "";
 
     const jar = await cookies();
-    const token = jar.get("access_token")?.value || jar.get("id_token")?.value || "";
-    if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    const token =
+      jar.get("access_token")?.value || jar.get("id_token")?.value || "";
+    if (!token) return NextResponse.json({ error: "unauthorized" }, noStore({ status: 401 }));
 
-    // STUB
+    // ====== STUB MODE ======
     if (!apiBase) {
       if (methodOverride === "revoke") {
-        if (!id) return NextResponse.json({ error: "missing_id" }, { status: 400 });
-        return NextResponse.json({ ok: true, action: "revoked", id }, { status: 200 });
+        if (!id) return NextResponse.json({ error: "missing_id" }, noStore({ status: 400 }));
+        return NextResponse.json({ ok: true, action: "revoked", id }, noStore({ status: 200 }));
       }
+      // Create: return array shape for consistency
       const newPass: Visitor = {
         id: `v${Math.random().toString(36).slice(2, 8)}`,
         name: "New Visitor",
@@ -84,34 +133,66 @@ export async function POST(req: Request) {
         validTill: new Date(Date.now() + 2 * 3600e3).toISOString(),
         status: "active",
       };
-      return NextResponse.json({ ok: true, data: newPass }, { status: 201 });
+      return NextResponse.json({ ok: true, data: [newPass] }, noStore({ status: 201 }));
     }
 
-    // REAL
+    // ====== REAL API ======
+    // Create
     if (!methodOverride) {
       const upstream = await fetch(`${apiBase}/visitors`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({}), // TODO: fill with real payload from a form
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        // TODO: pass real payload from your form
+        body: JSON.stringify({}),
+        cache: "no-store",
       });
-      const json = await upstream.json().catch(() => ({}));
-      if (!upstream.ok) return NextResponse.json({ error: "upstream_failed", status: upstream.status, details: json }, { status: 502 });
-      return NextResponse.json({ ok: true, data: json }, { status: 201 });
+
+      const raw = await upstream.json().catch(() => ({}));
+      if (!upstream.ok) {
+        return NextResponse.json(
+          { error: "upstream_failed", status: upstream.status, details: raw },
+          noStore({ status: 502 })
+        );
+      }
+
+      // Normalize to array for consistent shape
+      const created = normalizeVisitors(raw);
+      return NextResponse.json({ ok: true, data: created }, noStore({ status: 201 }));
     }
 
+    // Revoke
     if (methodOverride === "revoke") {
-      if (!id) return NextResponse.json({ error: "missing_id" }, { status: 400 });
-      const upstream = await fetch(`${apiBase}/visitors/${encodeURIComponent(id)}/revoke`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const json = await upstream.json().catch(() => ({}));
-      if (!upstream.ok) return NextResponse.json({ error: "upstream_failed", status: upstream.status, details: json }, { status: 502 });
-      return NextResponse.json({ ok: true, id }, { status: 200 });
+      if (!id) return NextResponse.json({ error: "missing_id" }, noStore({ status: 400 }));
+
+      const upstream = await fetch(
+        `${apiBase}/visitors/${encodeURIComponent(id)}/revoke`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        }
+      );
+
+      const raw = await upstream.json().catch(() => ({}));
+      if (!upstream.ok) {
+        return NextResponse.json(
+          { error: "upstream_failed", status: upstream.status, details: raw },
+          noStore({ status: 502 })
+        );
+      }
+
+      // Keeping revoke response simple; UI only needs success + id.
+      return NextResponse.json({ ok: true, id }, noStore({ status: 200 }));
     }
 
-    return NextResponse.json({ error: "unknown_action" }, { status: 400 });
+    return NextResponse.json({ error: "unknown_action" }, noStore({ status: 400 }));
   } catch (e) {
-    return NextResponse.json({ error: "internal_error", message: errMessage(e) }, { status: 500 });
+    return NextResponse.json(
+      { error: "internal_error", message: errMessage(e) },
+      noStore({ status: 500 })
+    );
   }
 }
